@@ -53,3 +53,11 @@ nid002516
 2022-05-20 21:07:43,516 - root - INFO - Starting Training Loop...
 2022-05-20 21:12:55,219 - root - INFO - Time taken for epoch 1 is 252.15744066238403 sec, avg 0.2538096826803148 samples/sec
 2022-05-20 21:12:55,259 - root - INFO -   Avg train loss=0.141123
+2022-05-20 21:42:23,817 - root - INFO - Reducer buckets have been rebuilt in this iteration.
+2022-05-20 21:42:23,983 - root - INFO - Reducer buckets have been rebuilt in this iteration.
+2022-05-20 21:42:23,983 - root - INFO - Reducer buckets have been rebuilt in this iteration.
+2022-05-20 21:42:23,983 - root - INFO - Reducer buckets have been rebuilt in this iteration.
+2022-05-20 21:42:24,678 - root - INFO - Time taken for epoch 2 is 819.6347312927246 sec, avg 0.07808356278297218 samples/sec
+2022-05-20 21:42:24,728 - root - INFO -   Avg train loss=0.152081
+2022-05-20 22:15:10,984 - root - INFO - Time taken for epoch 3 is 1009.809798002243 sec, avg 0.06337827195439615 samples/sec
+2022-05-20 22:15:11,052 - root - INFO -   Avg train loss=0.132152

@@ -114,14 +114,14 @@ def train(params, args, local_rank, world_rank, world_size):
 
         model.train()
         step_count = 0
-        for i, data in enumerate(train_data_loader, 0):
+        for i, data in enumerate(train_data_loader, 0): #TRAINING LOOP START
             iters += 1
             dat_start = time.time()
             inp, tar = map(lambda x: x.to(device), data)
             tr_start = time.time()
             b_size = inp.size(0)
       
-            lr_schedule(optimizer, iters, global_bs=params.global_batch_size, base_bs=params.base_batch_size, **params.lr_schedule)
+            lr_schedule(optimizer, iters, global_bs=params.global_batch_size, base_bs=params.base_batch_size, **params.lr_schedule) # adjust learning rate
             optimizer.zero_grad()
             with autocast(params.enable_amp):
                 gen = model(inp)
@@ -129,12 +129,12 @@ def train(params, args, local_rank, world_rank, world_size):
                 tr_loss.append(loss.item())
 
             if params.enable_amp:
-                scaler.scale(loss).backward()
+                scaler.scale(loss).backward() #backprop
                 scaler.step(optimizer)
-                scaler.update()
+                scaler.update() #adjust weights
             else:
-                loss.backward()
-                optimizer.step()
+                loss.backward() #backprop
+                optimizer.step() #adjust weights
 
             tr_end = time.time()
             tr_time += tr_end - tr_start
