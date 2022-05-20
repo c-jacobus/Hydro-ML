@@ -10,7 +10,6 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.tensorboard import SummaryWriter
 from apex import amp, optimizers
-#from apex.parallel import DistributedDataParallel
 from torch.nn.parallel import DistributedDataParallel
 import torch.multiprocessing
 
@@ -89,7 +88,7 @@ def train(params, args, local_rank, world_rank, world_size):
     if world_rank==0: 
         logging.info("Starting Training Loop...")
 
-  # Log initial loss on train and validation to tensorboard
+    # Log initial loss on train and validation to tensorboard
     if not args.enable_benchy:
         with torch.no_grad():
             inp, tar = map(lambda x: x.to(device), next(iter(train_data_loader)))
@@ -121,25 +120,25 @@ def train(params, args, local_rank, world_rank, world_size):
             tr_start = time.time()
             b_size = inp.size(0)
       
-        lr_schedule(optimizer, iters, global_bs=params.global_batch_size, base_bs=params.base_batch_size, **params.lr_schedule)
-        optimizer.zero_grad()
-        with autocast(params.enable_amp):
-            gen = model(inp)
-            loss = loss_func(gen, tar, lambda_rho)
-            tr_loss.append(loss.item())
+            lr_schedule(optimizer, iters, global_bs=params.global_batch_size, base_bs=params.base_batch_size, **params.lr_schedule)
+            optimizer.zero_grad()
+            with autocast(params.enable_amp):
+                gen = model(inp)
+                loss = loss_func(gen, tar, lambda_rho)
+                tr_loss.append(loss.item())
 
-        if params.enable_amp:
-            scaler.scale(loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
-        else:
-            loss.backward()
-            optimizer.step()
+            if params.enable_amp:
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                loss.backward()
+                optimizer.step()
 
-        tr_end = time.time()
-        tr_time += tr_end - tr_start
-        dat_time += tr_start - dat_start
-        step_count += 1
+            tr_end = time.time()
+            tr_time += tr_end - tr_start
+            dat_time += tr_start - dat_start
+            step_count += 1
 
         end = time.time()
         if world_rank==0:
@@ -149,59 +148,48 @@ def train(params, args, local_rank, world_rank, world_size):
             tboard_writer.add_scalar('Loss/train', np.mean(tr_loss), iters)
             tboard_writer.add_scalar('Learning Rate', optimizer.param_groups[0]['lr'], iters)
             tboard_writer.add_scalar('Avg iters per sec', step_count/(end-start), iters)
-
-            log_start = time.time()
-            gens = []
-            tars = []
+    
+        val_start = time.time()
+        val_loss = []
+        gens = []
+        tars = []
+        model.eval()
+        if not args.enable_benchy:
             with torch.no_grad():
-                for i, data in enumerate(train_data_loader, 0):
-                    if i>=16:
-                        break
-                    inp, tar = map(lambda x: x.to(device), data)
-                    gen = model(inp)
-                    gens.append(gen.detach().cpu().numpy())
-                    tars.append(tar.detach().cpu().numpy())
+                for i, data in enumerate(val_data_loader, 0):
+                    with autocast(params.enable_amp):
+                        inp, tar = map(lambda x: x.to(device), data)
+                        gen = model(inp)
+                        gens.append(gen.detach().cpu().numpy())
+                        tars.append(tar.detach().cpu().numpy())
+                        loss = loss_func(gen, tar, lambda_rho)
+                        if params.distributed:
+                            torch.distributed.all_reduce(loss)
+                        val_loss.append(loss.item()/world_size)
+            val_end = time.time()
             gens = np.concatenate(gens, axis=0)
             tars = np.concatenate(tars, axis=0)
-    
-            # Scalars
-            tboard_writer.add_scalar('G_loss', loss.item(), iters)
 
-            # Plots
-            fig, chi, L1score = meanL1(gens, tars)
-            tboard_writer.add_figure('pixhist', fig, iters, close=True)
-            tboard_writer.add_scalar('Metrics/chi', chi, iters)
-            tboard_writer.add_scalar('Metrics/rhoL1', L1score[0], iters)
-            tboard_writer.add_scalar('Metrics/vxL1', L1score[1], iters)
-            tboard_writer.add_scalar('Metrics/vyL1', L1score[2], iters)
-            tboard_writer.add_scalar('Metrics/vzL1', L1score[3], iters)
-            tboard_writer.add_scalar('Metrics/TL1', L1score[4], iters)
-            
-            fig = generate_images(inp.detach().cpu().numpy()[0], gens[-1], tars[-1])
-            tboard_writer.add_figure('genimg', fig, iters, close=True)
-    
-    val_start = time.time()
-    val_loss = []
-    model.eval()
-    if not args.enable_benchy:
-        with torch.no_grad():
-            for i, data in enumerate(val_data_loader, 0):
-                with autocast(params.enable_amp):
-                    inp, tar = map(lambda x: x.to(device), data)
-                    gen = model(inp)
-                    loss = loss_func(gen, tar, lambda_rho)
-                    if params.distributed:
-                        torch.distributed.all_reduce(loss)
-                    val_loss.append(loss.item()/world_size)
-        val_end = time.time()
-        if world_rank==0:
-            logging.info('  Avg val loss=%f'%np.mean(val_loss))
-            logging.info('  Total validation time: {} sec'.format(val_end - val_start)) 
-            tboard_writer.add_scalar('Loss/valid', np.mean(val_loss), iters)
-            tboard_writer.flush()
+            if world_rank==0:
+                # Scalars
+                tboard_writer.add_scalar('Loss/valid', np.mean(val_loss), iters)
 
-    t2 = time.time()
-    tottime = t2 - t1
+                # Plots
+                fig, chi, L1score = meanL1(gens, tars)
+                tboard_writer.add_figure('pixhist', fig, iters, close=True)
+                tboard_writer.add_scalar('Metrics/chi', chi, iters)
+                tboard_writer.add_scalar('Metrics/rhoL1', L1score[0], iters)
+                tboard_writer.add_scalar('Metrics/vxL1', L1score[1], iters)
+                tboard_writer.add_scalar('Metrics/vyL1', L1score[2], iters)
+                tboard_writer.add_scalar('Metrics/vzL1', L1score[3], iters)
+                tboard_writer.add_scalar('Metrics/TL1', L1score[4], iters)
+
+                fig = generate_images(inp.detach().cpu().numpy()[0], gens[-1], tars[-1])
+                tboard_writer.add_figure('genimg', fig, iters, close=True)
+
+                logging.info('  Avg val loss=%f'%np.mean(val_loss))
+                logging.info('  Total validation time: {} sec'.format(val_end - val_start)) 
+                tboard_writer.flush()
 
 
 

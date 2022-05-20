@@ -1,0 +1,5 @@
+__pycache__/
+*.out
+*.slr
+.ipynb_checkpoints/
+
