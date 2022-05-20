@@ -55,6 +55,21 @@ short_opt:
   enable_amp: True
   enable_apex: True
   enable_jit: True
+  
+bs1:
+  <<: *base
+  Nsamples: 1024
+  Nsamples_val: 16
+  num_epochs: 60
+  box_size: [1024, 1024]
+  data_size: 128
+  lr_schedule: {scaling: 'none', start_lr: 1.E-4, end_lr: 1.E-4, warmup_steps: 0}
+  num_data_workers: 8
+  data_loader_config: 'lowmem'
+  batch_size: 1
+  lambda_rho: 1e-2
+  train_path: '/pscratch/sd/p/pharring/Nyx_nbod2hydro/normalized_data/train.h5'
+  val_path: '/pscratch/sd/p/pharring/Nyx_nbod2hydro/normalized_data/test.h5'
 
 # Full training, batch size 64, with optimizations
 bs64_opt: &bs64_opt
@@ -96,10 +111,11 @@ trial:
   Nsamples_val: 512
   num_epochs: 20
   box_size: [1024, 1024]
+  lr_schedule: {scaling: 'none', start_lr: 1.E-4, end_lr: 1.E-4, warmup_steps: 0}
   data_size: 128
   num_data_workers: 8
   data_loader_config: 'lowmem'
-  batch_size: 128
+  global_batch_size: 128
   lambda_rho: 1e-2
   train_path: '/pscratch/sd/p/pharring/Nyx_nbod2hydro/normalized_data/train.h5'
   val_path: '/pscratch/sd/p/pharring/Nyx_nbod2hydro/normalized_data/test.h5'

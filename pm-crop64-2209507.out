@@ -1,0 +1,55 @@
+nid002516
++ srun -u shifter -V /pscratch/sd/j/joshr/nbody2hydro/datacopies:/data -V /pscratch/sd/c/cjacobus/ml-pm-training-2022/logs:/logs bash -c '
+    source export_DDP_vars.sh
+    python train.py --config=trial
+    '
+2022-05-20 21:07:32,849 - torch.distributed.distributed_c10d - INFO - Added key: store_based_barrier_key:1 to store for rank: 0
+2022-05-20 21:07:32,853 - torch.distributed.distributed_c10d - INFO - Added key: store_based_barrier_key:1 to store for rank: 1
+2022-05-20 21:07:32,856 - torch.distributed.distributed_c10d - INFO - Added key: store_based_barrier_key:1 to store for rank: 3
+2022-05-20 21:07:32,857 - torch.distributed.distributed_c10d - INFO - Added key: store_based_barrier_key:1 to store for rank: 2
+2022-05-20 21:07:32,857 - torch.distributed.distributed_c10d - INFO - Rank 2: Completed store-based barrier for key:store_based_barrier_key:1 with 4 nodes.
+2022-05-20 21:07:32,859 - torch.distributed.distributed_c10d - INFO - Rank 0: Completed store-based barrier for key:store_based_barrier_key:1 with 4 nodes.
+2022-05-20 21:07:32,863 - torch.distributed.distributed_c10d - INFO - Rank 1: Completed store-based barrier for key:store_based_barrier_key:1 with 4 nodes.
+2022-05-20 21:07:32,867 - torch.distributed.distributed_c10d - INFO - Rank 3: Completed store-based barrier for key:store_based_barrier_key:1 with 4 nodes.
+2022-05-20 21:07:32,879 - root - INFO - ------------------ Configuration ------------------
+2022-05-20 21:07:32,881 - root - INFO - Configuration file: /global/u1/c/cjacobus/Hydro-ML/config/UNet.yaml
+2022-05-20 21:07:32,881 - root - INFO - Configuration name: trial
+2022-05-20 21:07:32,881 - root - INFO - Nsamples 8192
+2022-05-20 21:07:32,881 - root - INFO - Nsamples_val 512
+2022-05-20 21:07:32,881 - root - INFO - num_epochs 20
+2022-05-20 21:07:32,881 - root - INFO - box_size [1024, 1024]
+2022-05-20 21:07:32,881 - root - INFO - lr_schedule ordereddict([('scaling', 'none'), ('start_lr', 0.0001), ('end_lr', 0.0001), ('warmup_steps', 0)])
+2022-05-20 21:07:32,881 - root - INFO - data_size 128
+2022-05-20 21:07:32,882 - root - INFO - num_data_workers 8
+2022-05-20 21:07:32,882 - root - INFO - data_loader_config lowmem
+2022-05-20 21:07:32,882 - root - INFO - batch_size 128
+2022-05-20 21:07:32,882 - root - INFO - lambda_rho 0.01
+2022-05-20 21:07:32,882 - root - INFO - train_path /pscratch/sd/p/pharring/Nyx_nbod2hydro/normalized_data/train.h5
+2022-05-20 21:07:32,882 - root - INFO - val_path /pscratch/sd/p/pharring/Nyx_nbod2hydro/normalized_data/test.h5
+2022-05-20 21:07:32,882 - root - INFO - weight_init ordereddict([('conv_init', 'normal'), ('conv_scale', 0.02), ('conv_bias', 0.0)])
+2022-05-20 21:07:32,882 - root - INFO - full_scale True
+2022-05-20 21:07:32,882 - root - INFO - global_batch_size 64
+2022-05-20 21:07:32,882 - root - INFO - base_batch_size 64
+2022-05-20 21:07:32,882 - root - INFO - enable_amp False
+2022-05-20 21:07:32,882 - root - INFO - enable_apex False
+2022-05-20 21:07:32,882 - root - INFO - enable_benchy False
+2022-05-20 21:07:32,882 - root - INFO - enable_jit False
+2022-05-20 21:07:32,882 - root - INFO - expdir /logs
+2022-05-20 21:07:32,882 - root - INFO - N_out_channels 5
+2022-05-20 21:07:32,882 - root - INFO - train_path_npy_data /data/downsamp_2048crop_train_data.npy
+2022-05-20 21:07:32,882 - root - INFO - train_path_npy_label /data/downsamp_2048crop_train_label.npy
+2022-05-20 21:07:32,882 - root - INFO - val_path_npy_data /data/downsamp_1024crop_valid_data.npy
+2022-05-20 21:07:32,882 - root - INFO - val_path_npy_label /data/downsamp_1024crop_valid_label.npy
+2022-05-20 21:07:32,882 - root - INFO - use_cache None
+2022-05-20 21:07:32,882 - root - INFO - ---------------------------------------------------
+2022-05-20 21:07:32,887 - root - INFO - rank 2, begin data loader init
+2022-05-20 21:07:32,887 - root - INFO - rank 3, begin data loader init
+2022-05-20 21:07:32,887 - root - INFO - rank 1, begin data loader init
+2022-05-20 21:07:32,887 - root - INFO - rank 2, data loader initialized with config lowmem
+2022-05-20 21:07:32,887 - root - INFO - rank 3, data loader initialized with config lowmem
+2022-05-20 21:07:32,887 - root - INFO - rank 1, data loader initialized with config lowmem
+2022-05-20 21:07:32,890 - root - INFO - rank 0, begin data loader init
+2022-05-20 21:07:32,890 - root - INFO - rank 0, data loader initialized with config lowmem
+2022-05-20 21:07:43,516 - root - INFO - Starting Training Loop...
+2022-05-20 21:12:55,219 - root - INFO - Time taken for epoch 1 is 252.15744066238403 sec, avg 0.2538096826803148 samples/sec
+2022-05-20 21:12:55,259 - root - INFO -   Avg train loss=0.141123

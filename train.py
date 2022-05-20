@@ -121,27 +121,28 @@ def train(params, args, local_rank, world_rank, world_size):
             tr_start = time.time()
             b_size = inp.size(0)
       
-        lr_schedule(optimizer, iters, global_bs=params.global_batch_size, base_bs=params.base_batch_size, **params.lr_schedule)
-        optimizer.zero_grad()
-        with autocast(params.enable_amp):
-            gen = model(inp)
-            loss = loss_func(gen, tar, lambda_rho)
-            tr_loss.append(loss.item())
+            lr_schedule(optimizer, iters, global_bs=params.global_batch_size, base_bs=params.base_batch_size, **params.lr_schedule)
+            optimizer.zero_grad()
+            with autocast(params.enable_amp):
+                gen = model(inp)
+                loss = loss_func(gen, tar, lambda_rho)
+                tr_loss.append(loss.item())
 
-        if params.enable_amp:
-            scaler.scale(loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
-        else:
-            loss.backward()
-            optimizer.step()
+            if params.enable_amp:
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                loss.backward()
+                optimizer.step()
 
-        tr_end = time.time()
-        tr_time += tr_end - tr_start
-        dat_time += tr_start - dat_start
-        step_count += 1
+            tr_end = time.time()
+            tr_time += tr_end - tr_start
+            dat_time += tr_start - dat_start
+            step_count += 1
 
         end = time.time()
+        '''
         if world_rank==0:
             logging.info('Time taken for epoch {} is {} sec, avg {} samples/sec'.format(epoch + 1, end-start,
                                                                                       (step_count * params["global_batch_size"])/(end-start)))
@@ -179,6 +180,7 @@ def train(params, args, local_rank, world_rank, world_size):
             
             fig = generate_images(inp.detach().cpu().numpy()[0], gens[-1], tars[-1])
             tboard_writer.add_figure('genimg', fig, iters, close=True)
+        '''
     
     val_start = time.time()
     val_loss = []
@@ -193,6 +195,45 @@ def train(params, args, local_rank, world_rank, world_size):
                     if params.distributed:
                         torch.distributed.all_reduce(loss)
                     val_loss.append(loss.item()/world_size)
+                    
+                    if world_rank==0:
+                        logging.info('Time taken for epoch {} is {} sec, avg {} samples/sec'.format(epoch + 1, end-start,
+                                                                                                  (step_count * params["global_batch_size"])/(end-start)))
+                        logging.info('  Avg train loss=%f'%np.mean(tr_loss))
+                        tboard_writer.add_scalar('Loss/train', np.mean(tr_loss), iters)
+                        tboard_writer.add_scalar('Learning Rate', optimizer.param_groups[0]['lr'], iters)
+                        tboard_writer.add_scalar('Avg iters per sec', step_count/(end-start), iters)
+
+                        log_start = time.time()
+                        gens = []
+                        tars = []
+                        with torch.no_grad():
+                            for i, data in enumerate(train_data_loader, 0):
+                                if i>=16:
+                                    break
+                                inp, tar = map(lambda x: x.to(device), data)
+                                gen = model(inp)
+                                gens.append(gen.detach().cpu().numpy())
+                                tars.append(tar.detach().cpu().numpy())
+                        gens = np.concatenate(gens, axis=0)
+                        tars = np.concatenate(tars, axis=0)
+
+                        # Scalars
+                        tboard_writer.add_scalar('G_loss', loss.item(), iters)
+
+                        # Plots
+                        fig, chi, L1score = meanL1(gens, tars)
+                        tboard_writer.add_figure('pixhist', fig, iters, close=True)
+                        tboard_writer.add_scalar('Metrics/chi', chi, iters)
+                        tboard_writer.add_scalar('Metrics/rhoL1', L1score[0], iters)
+                        tboard_writer.add_scalar('Metrics/vxL1', L1score[1], iters)
+                        tboard_writer.add_scalar('Metrics/vyL1', L1score[2], iters)
+                        tboard_writer.add_scalar('Metrics/vzL1', L1score[3], iters)
+                        tboard_writer.add_scalar('Metrics/TL1', L1score[4], iters)
+
+                        fig = generate_images(inp.detach().cpu().numpy()[0], gens[-1], tars[-1])
+                        tboard_writer.add_figure('genimg', fig, iters, close=True)
+                    
         val_end = time.time()
         if world_rank==0:
             logging.info('  Avg val loss=%f'%np.mean(val_loss))
