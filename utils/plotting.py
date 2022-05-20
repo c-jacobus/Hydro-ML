@@ -43,7 +43,7 @@ def generate_images(test_input, prediction, tar):
                  r'$\rho_H^* - \rho_H$', r'$T^*$', r'$T^* - T$',]
         cmaps = ['Blues', 'seismic', 'seismic', 'seismic',
                  'inferno', 'seismic', 'seismic', 'seismic',
-                 'seismic', 'viridis', 'seismic']
+                 'seismic', 'plasma', 'seismic']
         dat = [test_input, test_input, test_input, test_input,
                prediction, prediction, prediction, prediction,
                (prediction - tar), prediction, (prediction - tar)/tar]
