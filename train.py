@@ -83,7 +83,16 @@ def train(params, args, local_rank, world_rank, world_size):
     # start training
     iters = 0
     startEpoch = 0
+    checkpoint = None
     params.lr_schedule['tot_steps'] = params.num_epochs*(params.Nsamples//params.global_batch_size)
+    if args.resuming:
+    if world_rank==0:
+        logging.info("Loading checkpoint %s"%params.checkpoint_path)
+    checkpoint = torch.load(params.checkpoint_path, map_location='cuda:{}'.format(args.local_rank))
+    model.load_state_dict(checkpoint['model_state'])
+    iters = checkpoint['iters']
+    startEpoch = checkpoint['epoch'] + 1
+    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
 
     if world_rank==0: 
         logging.info("Starting Training Loop...")
@@ -148,6 +157,10 @@ def train(params, args, local_rank, world_rank, world_size):
             tboard_writer.add_scalar('Loss/train', np.mean(tr_loss), iters)
             tboard_writer.add_scalar('Learning Rate', optimizer.param_groups[0]['lr'], iters)
             tboard_writer.add_scalar('Avg iters per sec', step_count/(end-start), iters)
+            
+            # Save checkpoint
+            torch.save({'iters': iters, 'epoch':epoch, 'model_state': model.state_dict(), 
+                        'optimizer_state_dict': optimizer.state_dict()}, params.checkpoint_path)
     
         val_start = time.time()
         val_loss = []
@@ -262,11 +275,15 @@ if __name__ == '__main__':
     if  world_rank==0:
         if not os.path.isdir(expDir):
             os.makedirs(expDir)
+            os.mkdir(expDir+'training_checkpoints/')
         logging_utils.log_to_file(logger_name=None, log_filename=os.path.join(expDir, 'out.log'))
         params.log()
         tboard_writer = SummaryWriter(log_dir=os.path.join(expDir, 'logs/'))
 
     params.experiment_dir = os.path.abspath(expDir)
+    params.checkpoint_path = os.path.join(params.experiment_dir, 'training_checkpoints/ckpt.tar')
+    if os.path.isfile(params.checkpoint_path):
+        args.resuming=True
 
     train(params, args, local_rank, world_rank, world_size)
     if params.distributed:
