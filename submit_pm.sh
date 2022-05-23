@@ -21,7 +21,7 @@ cp /pscratch/sd/p/pharring/Nyx_nbod2hydro/normalized_data/*.h5 /tmp
 export MASTER_ADDR=$(hostname)
 
 set -x
-srun -u shifter -V ${LOGDIR}:/logs \
+srun -u shifter -V ${LOGDIR}:/logs --env PYTHONUSERBASE=$HOME/.local/perlmutter/sc21_tutorial \
     bash -c "
     source export_DDP_vars.sh
     python train.py ${args}

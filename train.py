@@ -24,6 +24,7 @@ from torch.cuda.amp import autocast, GradScaler
 
 from utils import get_data_loader_distributed, lr_schedule
 from networks import UNet
+from networks import New_UNet
 
 import apex.optimizers as aoptim
 
@@ -39,7 +40,8 @@ def train(params, args, local_rank, world_rank, world_size):
     logging.info('rank %d, data loader initialized with config %s'%(world_rank, params.data_loader_config))
 
     # create model
-    model = UNet.UNet(params).to(device)
+    model = New_UNet.UNet(params).to(device)
+    # model = New_UNet.UNet(params).to(device)
     model.apply(model.get_weights_function(params.weight_init))
   
     if params.enable_amp:
@@ -86,13 +88,13 @@ def train(params, args, local_rank, world_rank, world_size):
     checkpoint = None
     params.lr_schedule['tot_steps'] = params.num_epochs*(params.Nsamples//params.global_batch_size)
     if args.resuming:
-    if world_rank==0:
-        logging.info("Loading checkpoint %s"%params.checkpoint_path)
-    checkpoint = torch.load(params.checkpoint_path, map_location='cuda:{}'.format(args.local_rank))
-    model.load_state_dict(checkpoint['model_state'])
-    iters = checkpoint['iters']
-    startEpoch = checkpoint['epoch'] + 1
-    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        if world_rank==0:
+            logging.info("Loading checkpoint %s"%params.checkpoint_path)
+        checkpoint = torch.load(params.checkpoint_path, map_location='cuda:{}'.format(local_rank))
+        model.load_state_dict(checkpoint['model_state'])
+        iters = checkpoint['iters']
+        startEpoch = checkpoint['epoch'] + 1
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
 
     if world_rank==0: 
         logging.info("Starting Training Loop...")
@@ -268,7 +270,11 @@ if __name__ == '__main__':
     else:
         # Compute local batch size based on number of ranks
         params.local_batch_size = params.global_batch_size//world_size
-
+        
+    
+    
+    args.resuming = False
+    
     # Set up directory
     baseDir = params.expdir
     expDir = os.path.join(baseDir, args.config+'/%dGPU/'%(world_size)+str(run_num)+'/')
