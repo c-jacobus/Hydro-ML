@@ -29,6 +29,7 @@ from networks import New_UNet
 import apex.optimizers as aoptim
 
 def train(params, args, local_rank, world_rank, world_size):
+    logging.info("Initializing Data Loaders...")
     # set device and benchmark mode
     torch.backends.cudnn.benchmark = True
     torch.cuda.set_device(local_rank)
@@ -40,10 +41,13 @@ def train(params, args, local_rank, world_rank, world_size):
     logging.info('rank %d, data loader initialized with config %s'%(world_rank, params.data_loader_config))
 
     # create model
+    logging.info("Initializing Model...")
     model = New_UNet.UNet(params).to(device)
     # model = New_UNet.UNet(params).to(device)
+    logging.info("Initializing Weights...")
     model.apply(model.get_weights_function(params.weight_init))
-  
+    
+    logging.info("Initializing Training Parameters...")
     if params.enable_amp:
         scaler = GradScaler()
     if params.distributed and not args.noddp:
@@ -103,6 +107,10 @@ def train(params, args, local_rank, world_rank, world_size):
     if not args.enable_benchy:
         with torch.no_grad():
             inp, tar = map(lambda x: x.to(device), next(iter(train_data_loader)))
+            
+            logging.info(f'Target Shape: {tar.size()}')
+            logging.info(f'Output Shape: {model(inp).size()}')
+            
             tr_loss = loss_func(model(inp), tar, lambda_rho)
             inp, tar = map(lambda x: x.to(device), next(iter(val_data_loader)))
             val_loss= loss_func(model(inp), tar, lambda_rho)
@@ -288,7 +296,7 @@ if __name__ == '__main__':
 
     params.experiment_dir = os.path.abspath(expDir)
     params.checkpoint_path = os.path.join(params.experiment_dir, 'training_checkpoints/ckpt.tar')
-    if os.path.isfile(params.checkpoint_path):
+    if os.path.isfile(params.checkpoint_path) and params.load_ckpt:
         args.resuming=True
 
     train(params, args, local_rank, world_rank, world_size)

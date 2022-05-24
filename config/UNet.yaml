@@ -13,6 +13,7 @@ base: &base
   enable_apex: False
   enable_benchy: False
   enable_jit: False
+  load_ckpt: True
   expdir: '/logs'
 
   # params for setting learning rate (cosine decay schedule):
@@ -31,6 +32,7 @@ base: &base
   data_size: 64 # size of crops for training
   num_data_workers: 2 # number of dataloader worker threads per proc
   N_out_channels: 5
+  N_in_channels: 4
   # HDF5 files for PyTorch native dataloader
   train_path: '/data/downsamp_2048crop_train.h5'
   val_path: '/data/downsamp_1024crop_valid.h5'
@@ -105,4 +107,5 @@ trial:
   train_path: '/pscratch/sd/p/pharring/Nyx_nbod2hydro/normalized_data/train.h5'
   val_path: '/pscratch/sd/p/pharring/Nyx_nbod2hydro/normalized_data/test.h5'
   use_cache: '/tmp/'
+  load_ckpt: False
 

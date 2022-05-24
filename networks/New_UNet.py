@@ -1,6 +1,12 @@
 import torch
 import torch.nn as nn
 
+import logging
+from utils import logging_utils
+logging_utils.config_logger()
+
+from einops import rearrange
+
 def down_conv(in_channels, out_channels):
     return nn.Sequential(
         nn.Conv3d(in_channels, out_channels, 4, stride=2, padding=1),
@@ -128,17 +134,17 @@ class SinusoidalPosEmb(nn.Module):
         return emb
 
 def Upsample(dim):
-    return nn.ConvTranspose2d(dim, dim, 4, 2, 1)
+    return nn.ConvTranspose3d(dim, dim, 4, 2, 1)
 
 def Downsample(dim):
-    return nn.Conv2d(dim, dim, 4, 2, 1)
+    return nn.Conv3d(dim, dim, 4, 2, 1)
 
 class LayerNorm(nn.Module):
     def __init__(self, dim, eps = 1e-5):
         super().__init__()
         self.eps = eps
-        self.g = nn.Parameter(torch.ones(1, dim, 1, 1))
-        self.b = nn.Parameter(torch.zeros(1, dim, 1, 1))
+        self.g = nn.Parameter(torch.ones(1, dim, 1, 1, 1))
+        self.b = nn.Parameter(torch.zeros(1, dim, 1, 1, 1))
 
     def forward(self, x):
         var = torch.var(x, dim = 1, unbiased = False, keepdim = True)
@@ -167,7 +173,7 @@ class ConvNextBlock(nn.Module):
             nn.Linear(time_emb_dim, dim)
         ) if exists(time_emb_dim) else None
 
-        self.ds_conv = nn.Conv2d(dim, dim, 7, padding = 3, groups = dim)
+        self.ds_conv = nn.Conv3d(dim, dim, 7, padding = 3, groups = dim)
 
         self.net = nn.Sequential(
             LayerNorm(dim) if norm else nn.Identity(),
@@ -195,11 +201,11 @@ class LinearAttention(nn.Module):
         self.scale = dim_head ** -0.5
         self.heads = heads
         hidden_dim = dim_head * heads
-        self.to_qkv = nn.Conv2d(dim, hidden_dim * 3, 1, bias = False)
-        self.to_out = nn.Conv2d(hidden_dim, dim, 1)
+        self.to_qkv = nn.Conv3d(dim, hidden_dim * 3, 1, bias = False)
+        self.to_out = nn.Conv3d(hidden_dim, dim, 1)
 
     def forward(self, x):
-        b, c, h, w = x.shape
+        b, c, h, w, d = x.shape
         qkv = self.to_qkv(x).chunk(3, dim = 1)
         q, k, v = map(lambda t: rearrange(t, 'b (h c) x y -> b h c (x y)', h = self.heads), qkv)
         q = q * self.scale
@@ -217,11 +223,11 @@ class Attention(nn.Module):
         self.scale = dim_head ** -0.5
         self.heads = heads
         hidden_dim = dim_head * heads
-        self.to_qkv = nn.Conv2d(dim, hidden_dim * 3, 1, bias = False)
-        self.to_out = nn.Conv2d(hidden_dim, dim, 1)
+        self.to_qkv = nn.Conv3d(dim, hidden_dim * 3, 1, bias = False)
+        self.to_out = nn.Conv3d(hidden_dim, dim, 1)
 
     def forward(self, x):
-        b, c, h, w = x.shape
+        b, c, h, w, d = x.shape
         qkv = self.to_qkv(x).chunk(3, dim = 1)
         q, k, v = map(lambda t: rearrange(t, 'b (h c) x y -> b h c (x y)', h = self.heads), qkv)
         q = q * self.scale
@@ -235,20 +241,25 @@ class Attention(nn.Module):
         return self.to_out(out)
 
 
-class Unet(nn.Module):
+class UNet(nn.Module):
+    
     def __init__(self, params):
+        logging.info("Initializing Model Parameters...")
         super().__init__()
-        self.dim = params.box_size[0],
-        self.out_dim = params.box_size[1],
-        self.dim_mults=(1, 2, 4, 8),
-        self.channels = params.N_out_channels,
-        self.with_time_emb = False
+        
+        dim = 16
+        dim_mults=(1, 2, 4, 8)
+        channels = params.N_in_channels
+        with_time_emb = False
 
         dims = [channels, *map(lambda m: dim * m, dim_mults)]
         in_out = list(zip(dims[:-1], dims[1:]))
         
         time_dim = None
         self.time_mlp = None
+        
+        logging.info("Initializing Model Layers...")
+        logging.info(f'Down Channels: {in_out}')
 
         self.downs = nn.ModuleList([])
         self.ups = nn.ModuleList([])
@@ -268,8 +279,13 @@ class Unet(nn.Module):
         self.mid_block1 = ConvNextBlock(mid_dim, mid_dim, time_emb_dim = time_dim)
         self.mid_attn = Residual(PreNorm(mid_dim, Attention(mid_dim)))
         self.mid_block2 = ConvNextBlock(mid_dim, mid_dim, time_emb_dim = time_dim)
+        
+        channels = params.N_out_channels
+        dims = [channels, *map(lambda m: dim * m, dim_mults)]
+        in_out = list(zip(dims[:-1], dims[1:]))
+        logging.info(f'Up Channels: {in_out}')
 
-        for ind, (dim_in, dim_out) in enumerate(reversed(in_out[1:])):
+        for ind, (dim_in, dim_out) in enumerate(reversed(in_out[:])):  # used to be [1:]
             is_last = ind >= (num_resolutions - 1)
 
             self.ups.append(nn.ModuleList([
@@ -279,14 +295,14 @@ class Unet(nn.Module):
                 Upsample(dim_in) if not is_last else nn.Identity()
             ]))
 
-        out_dim = default(out_dim, channels)
         self.final_conv = nn.Sequential(
             ConvNextBlock(dim, dim),
-            nn.Conv2d(dim, out_dim, 1)
+            nn.Conv3d(dim, params.N_out_channels, 1)
         )
 
-    def forward(self, x, time):
-        t = self.time_mlp(time) if exists(self.time_mlp) else None
+    def forward(self, x):
+        logging.info(f'Input Shape: {x.size()}')
+        t =  None
 
         h = []
 
@@ -296,10 +312,12 @@ class Unet(nn.Module):
             x = attn(x)
             h.append(x)
             x = downsample(x)
+            logging.info(f'(Down) Shape: {x.size()}')
 
         x = self.mid_block1(x, t)
         x = self.mid_attn(x)
         x = self.mid_block2(x, t)
+        logging.info(f'(Mid) Shape: {x.size()}')
 
         for convnext, convnext2, attn, upsample in self.ups:
             x = torch.cat((x, h.pop()), dim=1)
@@ -307,13 +325,17 @@ class Unet(nn.Module):
             x = convnext2(x, t)
             x = attn(x)
             x = upsample(x)
+            logging.info(f'(Up) Shape: {x.size()}')
 
-        return self.final_conv(x)
+        
+        output = self.final_conv(x)
+        logging.info(f'Output Shape: {output.size()}')
+        return output
 
     def get_weights_function(self, params):
         def weights_init(m):
             classname = m.__class__.__name__
-            if classname.find('Conv') != -1:
+            if type(m) == nn.Linear:       # if classname.find('Conv') != -1 and classname != 'ConvNextBlock':
                 nn.init.normal_(m.weight.data, 0.0, params['conv_scale'])
                 if params['conv_bias'] is not None:
                     m.bias.data.fill_(params['conv_bias'])
