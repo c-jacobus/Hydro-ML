@@ -244,10 +244,10 @@ class Attention(nn.Module):
 class UNet(nn.Module):
     
     def __init__(self, params):
-        logging.info("Initializing Model Parameters...")
+        # logging.info("Initializing Model Parameters...")
         super().__init__()
         
-        dim = 16
+        dim = 8
         dim_mults=(1, 2, 4, 8)
         channels = params.N_in_channels
         with_time_emb = False
@@ -258,8 +258,8 @@ class UNet(nn.Module):
         time_dim = None
         self.time_mlp = None
         
-        logging.info("Initializing Model Layers...")
-        logging.info(f'Down Channels: {in_out}')
+        # logging.info("Initializing Model Layers...")
+        # logging.info(f'Down Channels: {in_out}')
 
         self.downs = nn.ModuleList([])
         self.ups = nn.ModuleList([])
@@ -271,27 +271,27 @@ class UNet(nn.Module):
             self.downs.append(nn.ModuleList([
                 ConvNextBlock(dim_in, dim_out, time_emb_dim = time_dim, norm = ind != 0),
                 ConvNextBlock(dim_out, dim_out, time_emb_dim = time_dim),
-                Residual(PreNorm(dim_out, LinearAttention(dim_out))),
+                # Residual(PreNorm(dim_out, LinearAttention(dim_out))),
                 Downsample(dim_out) if not is_last else nn.Identity()
             ]))
 
         mid_dim = dims[-1]
         self.mid_block1 = ConvNextBlock(mid_dim, mid_dim, time_emb_dim = time_dim)
-        self.mid_attn = Residual(PreNorm(mid_dim, Attention(mid_dim)))
+        # self.mid_attn = Residual(PreNorm(mid_dim, Attention(mid_dim)))
         self.mid_block2 = ConvNextBlock(mid_dim, mid_dim, time_emb_dim = time_dim)
         
         channels = params.N_out_channels
         dims = [channels, *map(lambda m: dim * m, dim_mults)]
         in_out = list(zip(dims[:-1], dims[1:]))
-        logging.info(f'Up Channels: {in_out}')
+        # logging.info(f'Up Channels: {in_out}')
 
-        for ind, (dim_in, dim_out) in enumerate(reversed(in_out[:])):  # used to be [1:]
+        for ind, (dim_in, dim_out) in enumerate(reversed(in_out[1:])):  # used to be [1:]
             is_last = ind >= (num_resolutions - 1)
 
             self.ups.append(nn.ModuleList([
                 ConvNextBlock(dim_out * 2, dim_in, time_emb_dim = time_dim),
                 ConvNextBlock(dim_in, dim_in, time_emb_dim = time_dim),
-                Residual(PreNorm(dim_in, LinearAttention(dim_in))),
+                # Residual(PreNorm(dim_in, LinearAttention(dim_in))),
                 Upsample(dim_in) if not is_last else nn.Identity()
             ]))
 
@@ -301,35 +301,35 @@ class UNet(nn.Module):
         )
 
     def forward(self, x):
-        logging.info(f'Input Shape: {x.size()}')
+        #logging.info(f'Input Shape: {x.size()}')
         t =  None
 
         h = []
 
-        for convnext, convnext2, attn, downsample in self.downs:
+        for convnext, convnext2, downsample in self.downs: # convnext, convnext2, attn, downsample
             x = convnext(x, t)
             x = convnext2(x, t)
-            x = attn(x)
+            # x = attn(x)
             h.append(x)
             x = downsample(x)
-            logging.info(f'(Down) Shape: {x.size()}')
+            #logging.info(f'(Down) Shape: {x.size()}')
 
         x = self.mid_block1(x, t)
-        x = self.mid_attn(x)
+        # x = self.mid_attn(x)
         x = self.mid_block2(x, t)
-        logging.info(f'(Mid) Shape: {x.size()}')
+        #logging.info(f'(Mid) Shape: {x.size()}')
 
-        for convnext, convnext2, attn, upsample in self.ups:
+        for convnext, convnext2, upsample in self.ups: # convnext, convnext2, attn, downsample
             x = torch.cat((x, h.pop()), dim=1)
             x = convnext(x, t)
             x = convnext2(x, t)
-            x = attn(x)
+            # x = attn(x)
             x = upsample(x)
-            logging.info(f'(Up) Shape: {x.size()}')
+            #logging.info(f'(Up) Shape: {x.size()}')
 
         
         output = self.final_conv(x)
-        logging.info(f'Output Shape: {output.size()}')
+        #logging.info(f'Output Shape: {output.size()}')
         return output
 
     def get_weights_function(self, params):

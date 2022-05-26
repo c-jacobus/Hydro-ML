@@ -55,10 +55,11 @@ def train(params, args, local_rank, world_rank, world_size):
             model = DistributedDataParallel(model, device_ids=[local_rank],
                                     bucket_cap_mb=args.bucket_cap_mb,
                                     broadcast_buffers=False,
-                                    gradient_as_bucket_view=True)
+                                    gradient_as_bucket_view=True) # find_unused_parameters=True
+            
         else:
             model = DistributedDataParallel(model, device_ids=[local_rank],
-                                    bucket_cap_mb=args.bucket_cap_mb)
+                                    bucket_cap_mb=args.bucket_cap_mb) # find_unused_parameters=True
 
     if params.enable_apex:
         optimizer = aoptim.FusedAdam(model.parameters(), lr = params.lr_schedule['start_lr'],
@@ -92,25 +93,19 @@ def train(params, args, local_rank, world_rank, world_size):
     checkpoint = None
     params.lr_schedule['tot_steps'] = params.num_epochs*(params.Nsamples//params.global_batch_size)
     if args.resuming:
-        if world_rank==0:
-            logging.info("Loading checkpoint %s"%params.checkpoint_path)
+        if world_rank==0: logging.info("Loading checkpoint %s"%params.checkpoint_path)
         checkpoint = torch.load(params.checkpoint_path, map_location='cuda:{}'.format(local_rank))
         model.load_state_dict(checkpoint['model_state'])
         iters = checkpoint['iters']
         startEpoch = checkpoint['epoch'] + 1
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
 
-    if world_rank==0: 
-        logging.info("Starting Training Loop...")
+    if world_rank==0: logging.info("Starting Training Loop...")
 
     # Log initial loss on train and validation to tensorboard
     if not args.enable_benchy:
         with torch.no_grad():
             inp, tar = map(lambda x: x.to(device), next(iter(train_data_loader)))
-            
-            logging.info(f'Target Shape: {tar.size()}')
-            logging.info(f'Output Shape: {model(inp).size()}')
-            
             tr_loss = loss_func(model(inp), tar, lambda_rho)
             inp, tar = map(lambda x: x.to(device), next(iter(val_data_loader)))
             val_loss= loss_func(model(inp), tar, lambda_rho)
@@ -120,10 +115,12 @@ def train(params, args, local_rank, world_rank, world_size):
             if world_rank==0:
                 tboard_writer.add_scalar('Loss/train', tr_loss.item()/world_size, 0)
                 tboard_writer.add_scalar('Loss/valid', val_loss.item()/world_size, 0)
-
+    
+    if world_rank==0: logging.info("Initial Benchmark Logged")
     iters = 0
     t1 = time.time()
     for epoch in range(startEpoch, startEpoch+params.num_epochs):
+        if world_rank==0: logging.info(f"Beginning Epoch {epoch + 1} Training...")
         start = time.time()
         tr_loss = []
         tr_time = 0.
@@ -171,7 +168,8 @@ def train(params, args, local_rank, world_rank, world_size):
             # Save checkpoint
             torch.save({'iters': iters, 'epoch':epoch, 'model_state': model.state_dict(), 
                         'optimizer_state_dict': optimizer.state_dict()}, params.checkpoint_path)
-    
+        
+        if world_rank==0: logging.info(f"Calculating Epoch {epoch + 1} Validation Metrics...")
         val_start = time.time()
         val_loss = []
         gens = []
