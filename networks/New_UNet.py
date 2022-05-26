@@ -280,11 +280,6 @@ class UNet(nn.Module):
         # self.mid_attn = Residual(PreNorm(mid_dim, Attention(mid_dim)))
         self.mid_block2 = ConvNextBlock(mid_dim, mid_dim, time_emb_dim = time_dim)
         
-        channels = params.N_out_channels
-        dims = [channels, *map(lambda m: dim * m, dim_mults)]
-        in_out = list(zip(dims[:-1], dims[1:]))
-        # logging.info(f'Up Channels: {in_out}')
-
         for ind, (dim_in, dim_out) in enumerate(reversed(in_out[1:])):  # used to be [1:]
             is_last = ind >= (num_resolutions - 1)
 
