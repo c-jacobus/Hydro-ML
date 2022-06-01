@@ -43,7 +43,7 @@ def train(params, args, local_rank, world_rank, world_size):
     # create model
     logging.info("Initializing Model...")
     
-    if params.model = 'next': 
+    if params.model=='next': 
         model = New_UNet.UNet(params).to(device)
     else:
         model = UNet.UNet(params).to(device)
@@ -300,7 +300,7 @@ if __name__ == '__main__':
 
     params.experiment_dir = os.path.abspath(expDir)
     params.checkpoint_path = os.path.join(params.experiment_dir, 'training_checkpoints/ckpt.tar')
-    if os.path.isfile(params.checkpoint_path) and args.ignore_ckpt:
+    if os.path.isfile(params.checkpoint_path) and not args.ignore_ckpt:
         args.resuming=True
 
     train(params, args, local_rank, world_rank, world_size)

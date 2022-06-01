@@ -107,9 +107,24 @@ base_trial:
   train_path: '/pscratch/sd/p/pharring/Nyx_nbod2hydro/normalized_data/train.h5'
   val_path: '/pscratch/sd/p/pharring/Nyx_nbod2hydro/normalized_data/test.h5'
   use_cache: '/tmp/'
-
   
-next_trial:
+vanilla:
+  <<: *base
+  Nsamples: 8192
+  Nsamples_val: 512
+  num_epochs: 20
+  box_size: [1024, 1024]
+  data_size: 128
+  num_data_workers: 8
+  data_loader_config: 'lowmem'
+  global_batch_size: 32
+  lambda_rho: 1e-2
+  lr_schedule: {scaling: 'none', start_lr: 1.E-4, end_lr: 1.E-4, warmup_steps: 0}
+  train_path: '/pscratch/sd/p/pharring/Nyx_nbod2hydro/normalized_data/train.h5'
+  val_path: '/pscratch/sd/p/pharring/Nyx_nbod2hydro/normalized_data/test.h5'
+  use_cache: '/tmp/'
+
+next_trial: &next_trial
   <<: *base
   model: 'next'
   Nsamples: 8192
@@ -125,5 +140,10 @@ next_trial:
   train_path: '/pscratch/sd/p/pharring/Nyx_nbod2hydro/normalized_data/train.h5'
   val_path: '/pscratch/sd/p/pharring/Nyx_nbod2hydro/normalized_data/test.h5'
   use_cache: '/tmp/'
+  
+next_amp:
+  <<: *next_trial
+  enable_amp: True
+  
 
 
