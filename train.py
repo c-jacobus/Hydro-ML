@@ -122,7 +122,7 @@ def train(params, args, local_rank, world_rank, world_size):
                 tboard_writer.add_scalar('Loss/valid', val_loss.item()/world_size, 0)
     
     if world_rank==0: logging.info("Initial Benchmark Logged")
-    iters = 0
+    
     t1 = time.time()
     for epoch in range(startEpoch, startEpoch+params.num_epochs):
         if world_rank==0: logging.info(f"Beginning Epoch {epoch + 1} Training...")
@@ -238,7 +238,7 @@ if __name__ == '__main__':
     parser.add_argument("--bucket_cap_mb", default=25, type=int, help='max message bucket size in mb')
     parser.add_argument("--disable_broadcast_buffers", action='store_true', help='disable syncing broadcasting buffers')
     parser.add_argument("--noddp", action='store_true', help='disable DDP communication')
-    parser.add_argument("--ignore_ckpt", default=False, action='store_true', help='ignores checkpoint files')
+    parser.add_argument("--ignore_ckpt", default=False, help='ignores checkpoint files')
     args = parser.parse_args()
 
     run_num = args.run_num

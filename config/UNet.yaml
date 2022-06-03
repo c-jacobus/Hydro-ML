@@ -108,7 +108,7 @@ base_trial:
   val_path: '/pscratch/sd/p/pharring/Nyx_nbod2hydro/normalized_data/test.h5'
   use_cache: '/tmp/'
   
-vanilla:
+vanilla: &vanilla
   <<: *base
   Nsamples: 8192
   Nsamples_val: 512
@@ -123,6 +123,14 @@ vanilla:
   train_path: '/pscratch/sd/p/pharring/Nyx_nbod2hydro/normalized_data/train.h5'
   val_path: '/pscratch/sd/p/pharring/Nyx_nbod2hydro/normalized_data/test.h5'
   use_cache: '/tmp/'
+  
+vanilla265:
+  <<: *vanilla
+  data_size: 256
+  Nsamples: 1024
+  Nsamples_val: 32
+  global_batch_size: 4
+  num_epochs: 40
 
 next_trial: &next_trial
   <<: *base
@@ -144,6 +152,13 @@ next_trial: &next_trial
 next_amp:
   <<: *next_trial
   enable_amp: True
-  
+
+next265:
+  <<: *vanilla
+  data_size: 256
+  Nsamples: 1024
+  Nsamples_val: 32
+  global_batch_size: 4
+  num_epochs: 40
 
 
