@@ -124,7 +124,7 @@ vanilla: &vanilla
   val_path: '/pscratch/sd/p/pharring/Nyx_nbod2hydro/normalized_data/test.h5'
   use_cache: '/tmp/'
   
-vanilla265:
+vanilla256:
   <<: *vanilla
   data_size: 256
   Nsamples: 1024
@@ -153,8 +153,8 @@ next_amp:
   <<: *next_trial
   enable_amp: True
 
-next265:
-  <<: *vanilla
+next256:
+  <<: *next_trial
   data_size: 256
   Nsamples: 1024
   Nsamples_val: 32

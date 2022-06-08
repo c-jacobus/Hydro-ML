@@ -296,11 +296,13 @@ class UNet(nn.Module):
         )
 
     def forward(self, x):
+        #logging.info(f'Beginning forward pass...')
         #logging.info(f'Input Shape: {x.size()}')
+        
         t =  None
 
         h = []
-
+        #with torch.backends.mkldnn.flags(enabled=False):
         for convnext, convnext2, downsample in self.downs: # convnext, convnext2, attn, downsample
             x = convnext(x, t)
             x = convnext2(x, t)
@@ -322,8 +324,9 @@ class UNet(nn.Module):
             x = upsample(x)
             #logging.info(f'(Up) Shape: {x.size()}')
 
-        
+
         output = self.final_conv(x)
+
         #logging.info(f'Output Shape: {output.size()}')
         return output
 
