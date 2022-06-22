@@ -20,14 +20,14 @@ import logging
 datapath = '/path/to/normalized/h5'
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--folder", default='/pscratch/sd/c/cjacobus/ml-pm-training-2022/logs/vanilla/4GPU/00/', type=str)
+parser.add_argument("--folder", default='/pscratch/sd/c/cjacobus/ml-pm-training-2022/logs/hydro_vanilla/4GPU/00/', type=str)
 parser.add_argument("--weights", default='training_checkpoints/ckpt.tar', type=str)
 parser.add_argument("--yaml_config", default='./config/UNet.yaml', type=str)
-parser.add_argument("--config", default='vanilla', type=str)
-parser.add_argument("--datapath", default='/pscratch/sd/p/pharring/Nyx_nbod2hydro/normalized_data/test.h5', type=str)
+parser.add_argument("--config", default='hydro_vanilla', type=str)
+parser.add_argument("--datapath", default='/pscratch/sd/c/cjacobus/ML_Hydro_train/training_512.h5', type=str)
 parser.add_argument("--trim", default=64, type=int)
-parser.add_argument("--size", default=512, type=int)
-parser.add_argument("--full_dim", default=1024, type=int)
+parser.add_argument("--size", default=128, type=int)
+parser.add_argument("--full_dim", default=512, type=int)
 parser.add_argument("--flavor", default='vanilla', type=str)
 parser.add_argument("--dummy", default=False, type=bool)
 parser.add_argument("--skip", default=False, type=bool)
@@ -100,7 +100,7 @@ if  world_rank==0:
         print("Initialized dummy weights [✓]")
         
 if not args.dummy:        
-    hf = h5py.File("{}inference_{}_size_{}_trim_{}.h5".format(args.folder,args.flavor,size,trim), 'w', driver='mpio', comm=MPI.COMM_WORLD)
+    hf = h5py.File("{}infer_{}_size_{}_trim_{}.h5".format(args.folder,args.flavor,size,trim), 'a', driver='mpio', comm=MPI.COMM_WORLD)
     
     hf.attrs['format'] = "nyx-lyaf"
     hf.attrs['chunk'] = size
@@ -119,23 +119,23 @@ if not args.dummy:
     uni.attrs['redshift'] = 2.9999991588912964
 
     # rho = hf.create_dataset("native_fields/baryon_density", data=np.exp(14.*final[0,0,:,:,:]))
-    rho = hf.create_dataset("native_fields/baryon_density", (1024,1024,1024), dtype='<f4')
+    rho = hf.create_dataset("native_fields/baryon_density", (full_dim,full_dim,full_dim), dtype='<f4')
     rho.attrs['units'] = "(mean)"
 
     # vx = hf.create_dataset("native_fields/velocity_x", data=final[0,1,:,:,:]*9e7)
-    vx = hf.create_dataset("native_fields/velocity_x", (1024,1024,1024), dtype='<f4')
+    vx = hf.create_dataset("native_fields/velocity_x", (full_dim,full_dim,full_dim), dtype='<f4')
     vx.attrs['units'] = "km/s"
 
     # vy = hf.create_dataset("native_fields/velocity_y", data=final[0,2,:,:,:]*9e7)
-    vy = hf.create_dataset("native_fields/velocity_y", (1024,1024,1024), dtype='<f4')
+    vy = hf.create_dataset("native_fields/velocity_y", (full_dim,full_dim,full_dim), dtype='<f4')
     vy.attrs['units'] = "km/s"
 
     # vz = hf.create_dataset("native_fields/velocity_z", data=final[0,3,:,:,:]*9e7)
-    vz = hf.create_dataset("native_fields/velocity_z", (1024,1024,1024), dtype='<f4')
+    vz = hf.create_dataset("native_fields/velocity_z", (full_dim,full_dim,full_dim), dtype='<f4')
     vz.attrs['units'] = "km/s"
 
     # temp = hf.create_dataset("native_fields/temperature", data=np.exp(8.*(final[0,4,:,:,:] + 1.5)))
-    temp = hf.create_dataset("native_fields/temperature", (1024,1024,1024), dtype='<f4')
+    temp = hf.create_dataset("native_fields/temperature", (full_dim,full_dim,full_dim), dtype='<f4')
     temp.attrs['units'] = "K"
 
     print("Rank {} initialized file".format(world_rank))
@@ -143,9 +143,9 @@ if not args.dummy:
 with h5py.File(args.datapath, 'r') as f:
     if not args.dummy: 
         if  world_rank==0: print("Input data path: {}".format(args.datapath))
-        full_dim = f['Nbody'][0,0,0,:].shape[0]
+        full_dim = f['coarse'][0,0,0,:].shape[0]
         if  world_rank==0: print("Dimension: {}".format(full_dim))
-        # full = f['Nbody'][:,:,:,:].astype(dtype)
+        # full = f['coarse'][:,:,:,:].astype(dtype)
 
         # full = np.expand_dims(full, axis=0) # add batch dim
         # full = torch.from_numpy(full)
@@ -153,7 +153,7 @@ with h5py.File(args.datapath, 'r') as f:
 
     else:
         # full_dim=1024
-        full_dim = f['Nbody'][0,0,0,:].shape[0]
+        full_dim = f['coarse'][0,0,0,:].shape[0]
         if  world_rank==0: print("Dimension: {}".format(full_dim))
         
     
@@ -198,7 +198,7 @@ with h5py.File(args.datapath, 'r') as f:
                         y_plus = None if (y2_edge == 0) else -y2_edge
                         z_plus = None if (z2_edge == 0) else -z2_edge
                         
-                        sliced_in = f['Nbody'][:, x1-x1_edge:x2+x2_edge, y1-y1_edge:y2+y2_edge, z1-z1_edge:z2+z2_edge].astype(dtype)
+                        sliced_in = f['coarse'][:, x1-x1_edge:x2+x2_edge, y1-y1_edge:y2+y2_edge, z1-z1_edge:z2+z2_edge].astype(dtype)
                         sliced_in = np.expand_dims(sliced_in, axis=0) # add batch dim
                         sliced_in = torch.from_numpy(sliced_in)
 
@@ -214,7 +214,7 @@ with h5py.File(args.datapath, 'r') as f:
                         hf['native_fields']['velocity_y'][x1:x2,y1:y2,z1:z2] = chunk[0, 2, x1_edge:x_plus, y1_edge:y_plus, z1_edge:z_plus]*9e7
                         hf['native_fields']['velocity_z'][x1:x2,y1:y2,z1:z2] = chunk[0, 3, x1_edge:x_plus, y1_edge:y_plus, z1_edge:z_plus]*9e7
                         hf['native_fields']['temperature'][x1:x2,y1:y2,z1:z2] = np.exp(8.*(chunk[0, 4, x1_edge:x_plus, y1_edge:y_plus, z1_edge:z_plus] + 1.5))
-                        
+                        print("Rank {} wrote chunk [{},{},{}] to file".format(world_rank,x,y,z))
                         #print("Chunk [{},{},{}] output shape: {}".format(x,y,z,chunk.shape))
 
                     if args.skip: break

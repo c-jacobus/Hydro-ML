@@ -5,6 +5,10 @@ from torch import Tensor
 import h5py
 import os
 
+import logging
+from utils import logging_utils
+logging_utils.config_logger()
+
 
 def worker_init(wrk_id):
     np.random.seed(torch.utils.data.get_worker_info().seed%(2**32 - 1))
@@ -56,7 +60,7 @@ class RandomJunkDataset(Dataset):
     def __init__(self, params):
         self.length = params.box_size
         self.size = params.data_size
-        self.RandInp = np.random.normal(size=(4, self.length, self.length, self.length)).astype(np.float32)
+        self.RandInp = np.random.normal(size=(5, self.length, self.length, self.length)).astype(np.float32)
         self.RandTar = np.random.normal(size=(5, self.length, self.length, self.length)).astype(np.float32)
         self.Nsamples = params.Nsamples
         self.rotate = RandomRotator()
@@ -93,15 +97,16 @@ class RandomCropDataset(Dataset):
         self.rotate = RandomRotator()
         self.inmem = params.data_loader_config == 'inmem'
         
-        self.inp_buff = np.zeros((4, self.size, self.size, self.size), dtype=np.float32)
+        self.inp_buff = np.zeros((5, self.size, self.size, self.size), dtype=np.float32)
         self.tar_buff = np.zeros((5, self.size, self.size, self.size), dtype=np.float32)
         if self.inmem:
             with h5py.File(self.fname, 'r') as f:
-                self.Hydro = f['Hydro'][...]
-                self.Nbody = f['Nbody'][...]
+                self.fine = f['fine'][...]
+                self.coarse = f['coarse'][...]
         self.file = None
 
     def _open_file(self):
+        logging.info("Dataloader: opening h5 file...")
         self.file = h5py.File(self.fname, 'r')
 
     def __len__(self):
@@ -114,16 +119,16 @@ class RandomCropDataset(Dataset):
         y = np.random.randint(low=0, high=self.length-self.size)
         z = np.random.randint(low=0, high=self.length-self.size)
         if self.inmem:
-            self.inp_buff = self.Nbody[:, x:x+self.size, y:y+self.size, z:z+self.size]
-            self.tar_buff = self.Hydro[:, x:x+self.size, y:y+self.size, z:z+self.size]
+            self.inp_buff = self.coarse[:, x:x+self.size, y:y+self.size, z:z+self.size]
+            self.tar_buff = self.fine[:, x:x+self.size, y:y+self.size, z:z+self.size]
         else:
-            self.file['Nbody'].read_direct(self.inp_buff,
-                                       np.s_[0:4, x:x+self.size, y:y+self.size, z:z+self.size],
-                                       np.s_[0:4, 0:self.size, 0:self.size, 0:self.size])
-            self.file['Hydro'].read_direct(self.tar_buff,
+            self.file['coarse'].read_direct(self.inp_buff,
                                        np.s_[0:5, x:x+self.size, y:y+self.size, z:z+self.size],
                                        np.s_[0:5, 0:self.size, 0:self.size, 0:self.size])
-
+            self.file['fine'].read_direct(self.tar_buff,
+                                       np.s_[0:5, x:x+self.size, y:y+self.size, z:z+self.size],
+                                       np.s_[0:5, 0:self.size, 0:self.size, 0:self.size])
+        logging.info("Dataloader: got chunk")
         rand = np.random.randint(low=1, high=25)
         inp = np.copy(self.rotate(self.inp_buff, rand))
         tar = np.copy(self.rotate(self.tar_buff, rand))

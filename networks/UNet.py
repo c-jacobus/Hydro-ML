@@ -68,7 +68,7 @@ class UNet(nn.Module):
     def __init__(self, params):
         super().__init__()
         self.full_scale = params.full_scale
-        self.conv_down1 = down_conv(4, 64)
+        self.conv_down1 = down_conv(params.N_in_channels, 64)
         self.conv_down2 = down_conv(64, 128)
         self.conv_down3 = down_conv(128, 256)
         self.conv_down4 = down_conv(256, 512)        

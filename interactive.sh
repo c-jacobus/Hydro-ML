@@ -1,6 +1,6 @@
 #!/bin/bash 
 
-LOGDIR=${SCRATCH}/ml-pm-training-2022/logs
+LOGDIR=${SCRATCH}/ML_Hydro_train/logs
 mkdir -p ${LOGDIR}
 args="${@}"
 
@@ -8,7 +8,7 @@ args="${@}"
 export MASTER_ADDR=$(hostname)
 
 set -x
-srun -u --ntasks-per-node 4 --cpus-per-task 32 --gpus-per-node 4 shifter -V ${LOGDIR}:/logs --image=romerojosh/containers:sc21_tutorial --env PYTHONUSERBASE=$HOME/.local/perlmutter/sc21_tutorial \
+srun -u --ntasks-per-node 4 --cpus-per-task 32 --gpus-per-node 4 shifter -V ${LOGDIR}:/logs --image=nersc/pytorch:ngc-22.03-v0 --env PYTHONUSERBASE=$HOME/.local/perlmutter/nersc-pytorch-ngc-22.03-v0 \
     bash -c "
     source export_DDP_vars.sh
     python train.py ${args}

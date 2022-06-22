@@ -111,6 +111,7 @@ def train(params, args, local_rank, world_rank, world_size):
     if not args.enable_benchy:
         with torch.no_grad():
             inp, tar = map(lambda x: x.to(device), next(iter(train_data_loader)))
+            if world_rank==0: logging.info("Loaded Benchmark Data")
             tr_loss = loss_func(model(inp), tar, lambda_rho)
             inp, tar = map(lambda x: x.to(device), next(iter(val_data_loader)))
             val_loss= loss_func(model(inp), tar, lambda_rho)

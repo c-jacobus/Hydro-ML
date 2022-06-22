@@ -131,6 +131,25 @@ vanilla256:
   Nsamples_val: 32
   global_batch_size: 4
   num_epochs: 40
+  
+hydro_vanilla:
+  <<: *vanilla
+  box_size: [512, 512]
+  data_size: 128
+  N_in_channels: 5
+  train_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512.h5'
+  val_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512.h5'
+  num_epochs: 40
+  
+hydro_vanilla_big:
+  <<: *vanilla
+  box_size: [4096, 4096]
+  data_size: 128
+  N_in_channels: 5
+  train_path: '/pscratch/sd/c/cjacobus/Nyx_4096/train_s1_4096.h5'
+  val_path: '/pscratch/sd/c/cjacobus/Nyx_4096/train_s1_4096.h5'
+  num_epochs: 40
+  use_cache: None
 
 next_trial: &next_trial
   <<: *base
@@ -160,5 +179,23 @@ next256:
   Nsamples_val: 32
   global_batch_size: 4
   num_epochs: 40
+  
+hydro_next:
+  <<: *next_trial
+  box_size: [512, 512]
+  data_size: 128
+  N_in_channels: 5
+  train_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512.h5'
+  val_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512.h5'
+  num_epochs: 40
 
+hydro_next_big:
+  <<: *next_trial
+  box_size: [4096, 4096]
+  data_size: 128
+  N_in_channels: 5
+  train_path: '/pscratch/sd/c/cjacobus/Nyx_4096/train_s1_4096.h5'
+  val_path: '/pscratch/sd/c/cjacobus/Nyx_4096/train_s1_4096.h5'
+  num_epochs: 40
+  use_cache: None
 
