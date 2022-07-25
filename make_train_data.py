@@ -18,15 +18,14 @@ from skimage import data, color
 from skimage.transform import rescale, resize, downscale_local_mean
 
 
-datapath = '/path/to/normalized/h5'
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--datapath", default='/pscratch/sd/z/zarija/MLHydro/coarse_4096_s1.hdf5', type=str)
-parser.add_argument("--datapath_2", default='/pscratch/sd/z/zarija/MLHydro/L80_N4096_z3_s1.hdf5', type=str)
-parser.add_argument("--size", default=512, type=int)
+parser.add_argument("--datapath", default='/pscratch/sd/z/zarija/MLHydro/L80_N512_z3_s1.hdf5', type=str)
+parser.add_argument("--datapath_2", default='/pscratch/sd/z/zarija/MLHydro/invar_pyr05_sub.hdf5', type=str)
+parser.add_argument("--size", default=128, type=int)
 
-parser.add_argument("--out_shape", default=4096, type=int)
-parser.add_argument("--save_path", default='/pscratch/sd/c/cjacobus/Nyx_4096/fresh_train_s1_4096.h5', type=str)
+parser.add_argument("--out_shape", default=512, type=int)
+parser.add_argument("--save_path", default='/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_flux.h5', type=str)
 args = parser.parse_args()
 
 size=args.size
@@ -75,13 +74,17 @@ with h5py.File(args.save_path, 'a', driver='mpio', comm=MPI.COMM_WORLD) as hf:
         uni.attrs['redshift'] = 2.9999991588912964
 
         # rho = hf.create_dataset("native_fields/baryon_density", data=np.exp(14.*final[0,0,:,:,:]))
-        coarse = hf.create_dataset("coarse", (5, full_dim,full_dim,full_dim), dtype='<f4')
-        fine = hf.create_dataset("fine", (5, full_dim,full_dim,full_dim), dtype='<f4')
+        coarse = hf.create_dataset("coarse", (5, full_dim,full_dim,full_dim,), dtype='<f4')
+        fine = hf.create_dataset("fine", (1, full_dim,full_dim,full_dim), dtype='<f4')
+        
+        '''
+        coarse = hf.create_dataset("coarse", (full_dim,full_dim,full_dim, 5), dtype='<f4')
+        fine = hf.create_dataset("fine", (full_dim,full_dim,full_dim, 5), dtype='<f4')
+        '''
+        
         hf.create_dataset("chunk_complete", (slices,slices,slices), dtype='<f4')
 
     print("Rank {} initialized file".format(world_rank))
-
-
 
 
     out_shape = full_dim
@@ -94,7 +97,7 @@ with h5py.File(args.save_path, 'a', driver='mpio', comm=MPI.COMM_WORLD) as hf:
         print("Slices: {}".format(slices))
         print("Sending {} chunks individually...".format(slices**3))
 
-    time.sleep(world_rank*1)
+    time.sleep(world_rank*0.05)
 
 
     for x in range(slices):
@@ -110,7 +113,7 @@ with h5py.File(args.save_path, 'a', driver='mpio', comm=MPI.COMM_WORLD) as hf:
                 z2 = int(min((z+1)*size,full_dim))
 
                 if not hf['chunk_complete'][x,y,z] == 1:
-                    time.sleep(world_rank*0.5)
+                    time.sleep(world_rank*0.05)
 
                     if not hf['chunk_complete'][x,y,z] == 1:
                         hf['chunk_complete'][x,y,z] = 1
@@ -147,6 +150,7 @@ with h5py.File(args.save_path, 'a', driver='mpio', comm=MPI.COMM_WORLD) as hf:
                         sliced_in_vy = f2['native_fields']['velocity_y'][x1:x2, y1:y2, z1:z2].astype(dtype)
                         sliced_in_vz = f2['native_fields']['velocity_z'][x1:x2, y1:y2, z1:z2].astype(dtype)
                         sliced_in_temp = f2['native_fields']['temperature'][x1:x2, y1:y2, z1:z2].astype(dtype)
+                        sliced_in_tau = f2['derived_fields']['tau_red'][x1:x2, y1:y2, z1:z2].astype(dtype)
                         print("Rank {} received fine chunk [{},{},{}], input shape: {}".format(world_rank,x,y,z,sliced_in_rho.shape))
 
                         # normalize
@@ -155,18 +159,22 @@ with h5py.File(args.save_path, 'a', driver='mpio', comm=MPI.COMM_WORLD) as hf:
                         sliced_in_vy = sliced_in_vy/9e7
                         sliced_in_vz = sliced_in_vz/9e7
                         sliced_in_temp = np.log(sliced_in_temp)/8 -1.5
+                        
+                        #sliced_in_tau = np.log(sliced_in_tau+1)/20
+                        sliced_in_tau = np.exp(-sliced_in_tau)
                         print("Rank {} normalized fine chunk [{},{},{}]".format(world_rank,x,y,z))
 
                         # write to file   
-                        hf['fine'][0, x1:x2, y1:y2, z1:z2] = sliced_in_rho
-                        hf['fine'][1, x1:x2, y1:y2, z1:z2] = sliced_in_vx
-                        hf['fine'][2, x1:x2, y1:y2, z1:z2] = sliced_in_vy
-                        hf['fine'][3, x1:x2, y1:y2, z1:z2] = sliced_in_vz
-                        hf['fine'][4, x1:x2, y1:y2, z1:z2] = sliced_in_temp
+                        #hf['fine'][0, x1:x2, y1:y2, z1:z2] = sliced_in_rho
+                        #hf['fine'][1, x1:x2, y1:y2, z1:z2] = sliced_in_vx
+                        #hf['fine'][2, x1:x2, y1:y2, z1:z2] = sliced_in_vy
+                        #hf['fine'][3, x1:x2, y1:y2, z1:z2] = sliced_in_vz
+                        #hf['fine'][4, x1:x2, y1:y2, z1:z2] = sliced_in_temp
+                        hf['fine'][0, x1:x2, y1:y2, z1:z2] = sliced_in_tau
                         print("Rank {} wrote fine chunk [{},{},{}] to file".format(world_rank,x,y,z))
 
-
 hf.close()
+
 if  world_rank==0: print("Saved: {}".format(full_dim))
 maxRSS = resource.getrusage(resource.RUSAGE_SELF)[2]
 

@@ -3,7 +3,9 @@ base: &base
   # Training config
   model: 'base' 
   weight_init: {conv_init: 'normal', conv_scale: 0.02, conv_bias: 0.}
-  lambda_rho: 0 # weight for additional rho loss term
+  lambda_chi: 0 # weight for additional chi loss term
+  lambda_spec: 0 # weight for additional powerspectrum loss term
+  trim: 0 # radius from edge where model is not held accountable for loss
   full_scale: True # whether or not to use all 6 of the scales in U-Net
   global_batch_size: 64 # number of samples per training batch
   base_batch_size: 64 # single GPU batch size
@@ -28,85 +30,22 @@ base: &base
 
   # Data
   data_loader_config: 'lowmem' # choices: 'synthetic', 'inmem', 'lowmem', 'dali-lowmem'
-  box_size: [1024, 512] # total size of simulation boxes (train, validation) OLD
+  box_size: [512, 512] # total size of simulation boxes (train, validation) OLD
   data_size: 64 # size of crops for training
   num_data_workers: 2 # number of dataloader worker threads per proc
   N_out_channels: 5
-  N_in_channels: 4
+  N_in_channels: 5
   # HDF5 files for PyTorch native dataloader
   train_path: '/data/downsamp_2048crop_train.h5'
   val_path: '/data/downsamp_1024crop_valid.h5'
-  # numpy files for DALI dataloader
-  train_path_npy_data: '/data/downsamp_2048crop_train_data.npy'
-  train_path_npy_label: '/data/downsamp_2048crop_train_label.npy'
-  val_path_npy_data: '/data/downsamp_1024crop_valid_data.npy'
-  val_path_npy_label: '/data/downsamp_1024crop_valid_label.npy'
   use_cache: None # set this to a cache dir (e.g., NVMe on CoriGPU) if you copied data there
+  last_filter: 'relu'
+  up_filter: 'relu'
+  down_filter: 'leaky'
+  upsample: False
+  blur: False
+  single_box: False
 
-# A short config for testing/profiling on a single A100
-short: &short
-  <<: *base
-  Nsamples: 4096
-  Nsamples_val: 512
-  num_epochs: 4
-
-# Short config with full optimizations
-short_opt:
-  <<: *short
-  data_loader_config: 'dali-lowmem'
-  enable_amp: True
-  enable_apex: True
-  enable_jit: True
-
-# Full training, batch size 64, with optimizations
-bs64_opt: &bs64_opt
-  <<: *base
-  data_loader_config: 'dali-lowmem'
-  global_batch_size: 64
-  enable_amp: True
-  enable_apex: True
-  enable_jit: True
-
-bs256_opt: # 4 GPUs
-  <<: *bs64_opt
-  global_batch_size: 256
-  num_epochs: 20
-
-bs512_test: # 8 GPUs
-  <<: *bs64_opt
-  global_batch_size: 512
-
-bs512_opt: # 8 GPUs
-  <<: *bs64_opt
-  global_batch_size: 512
-  num_epochs: 40
-
-bs2048_opt: # 32 GPUs
-  <<: *bs64_opt
-  global_batch_size: 2048
-  num_epochs: 160
-
-# Warning: training may be unstable
-bs8192_opt: # 128 GPUs
-  <<: *bs64_opt
-  global_batch_size: 8192
-  num_epochs: 320
-  
-base_trial:
-  <<: *base
-  Nsamples: 8192
-  Nsamples_val: 512
-  num_epochs: 20
-  box_size: [1024, 1024]
-  data_size: 128
-  num_data_workers: 8
-  data_loader_config: 'lowmem'
-  global_batch_size: 32
-  lambda_rho: 1e-2
-  lr_schedule: {scaling: 'none', start_lr: 1.E-4, end_lr: 1.E-4, warmup_steps: 0}
-  train_path: '/pscratch/sd/p/pharring/Nyx_nbod2hydro/normalized_data/train.h5'
-  val_path: '/pscratch/sd/p/pharring/Nyx_nbod2hydro/normalized_data/test.h5'
-  use_cache: '/tmp/'
   
 vanilla: &vanilla
   <<: *base
@@ -118,7 +57,8 @@ vanilla: &vanilla
   num_data_workers: 8
   data_loader_config: 'lowmem'
   global_batch_size: 32
-  lambda_rho: 1e-2
+  lambda_chi: 0 # weight for additional chi loss term
+  lambda_spec: 0 # weight for additional powerspectrum loss term
   lr_schedule: {scaling: 'none', start_lr: 1.E-4, end_lr: 1.E-4, warmup_steps: 0}
   train_path: '/pscratch/sd/p/pharring/Nyx_nbod2hydro/normalized_data/train.h5'
   val_path: '/pscratch/sd/p/pharring/Nyx_nbod2hydro/normalized_data/test.h5'
@@ -136,20 +76,55 @@ hydro_vanilla:
   <<: *vanilla
   box_size: [512, 512]
   data_size: 128
+  global_batch_size: 32
+  Nsamples: 8192
+  Nsamples_val: 512
   N_in_channels: 5
   train_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512.h5'
   val_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512.h5'
   num_epochs: 40
+  use_cache: '/tmp/'
+  
+hydro_vanilla_256:
+  <<: *vanilla
+  box_size: [512, 512]
+  data_size: 256
+  global_batch_size: 16
+  Nsamples: 1024
+  Nsamples_val: 32
+  N_in_channels: 5
+  train_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512.h5'
+  val_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512.h5'
+  num_epochs: 40
+  use_cache: None
   
 hydro_vanilla_big:
   <<: *vanilla
   box_size: [4096, 4096]
   data_size: 128
+  global_batch_size: 32
+  Nsamples: 1024
+  Nsamples_val: 256
   N_in_channels: 5
-  train_path: '/pscratch/sd/c/cjacobus/Nyx_4096/train_s1_4096.h5'
-  val_path: '/pscratch/sd/c/cjacobus/Nyx_4096/train_s1_4096.h5'
+  train_path: '/pscratch/sd/c/cjacobus/Nyx_4096_small/train_4096.h5'
+  val_path: '/pscratch/sd/c/cjacobus/Nyx_4096_small/train_4096.h5'
   num_epochs: 40
   use_cache: None
+  
+hydro_vanilla_flux:
+  <<: *vanilla
+  box_size: [512, 512]
+  data_size: 128
+  global_batch_size: 32
+  Nsamples: 8192
+  Nsamples_val: 512
+  N_in_channels: 5
+  train_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_flux.h5'
+  val_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_flux.h5'
+  num_epochs: 40
+  use_cache: None  
+  N_out_channels: 6
+  
 
 next_trial: &next_trial
   <<: *base
@@ -162,7 +137,7 @@ next_trial: &next_trial
   num_data_workers: 8
   data_loader_config: 'lowmem'
   global_batch_size: 32
-  lambda_rho: 1e-2
+  lambda_chi: 1e-2
   lr_schedule: {scaling: 'none', start_lr: 1.E-4, end_lr: 1.E-4, warmup_steps: 0}
   train_path: '/pscratch/sd/p/pharring/Nyx_nbod2hydro/normalized_data/train.h5'
   val_path: '/pscratch/sd/p/pharring/Nyx_nbod2hydro/normalized_data/test.h5'
@@ -193,9 +168,570 @@ hydro_next_big:
   <<: *next_trial
   box_size: [4096, 4096]
   data_size: 128
+  global_batch_size: 32
+  Nsamples: 1024
+  Nsamples_val: 128
   N_in_channels: 5
   train_path: '/pscratch/sd/c/cjacobus/Nyx_4096/train_s1_4096.h5'
   val_path: '/pscratch/sd/c/cjacobus/Nyx_4096/train_s1_4096.h5'
   num_epochs: 40
   use_cache: None
 
+hydro_next_attn:
+  <<: *next_trial
+  model: 'attn'
+  box_size: [512, 512]
+  data_size: 128
+  N_in_channels: 5
+  train_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512.h5'
+  val_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512.h5'
+  num_epochs: 40
+  global_batch_size: 32
+  use_cache: None
+
+
+new_tau_vanilla: &tau_vanilla
+  <<: *vanilla
+  box_size: [512, 512]
+  data_size: 128
+  global_batch_size: 32
+  Nsamples: 8192
+  Nsamples_val: 512
+  N_in_channels: 5
+  N_out_channels: 1
+  train_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_tau.h5'
+  val_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_tau.h5'
+  num_epochs: 300
+  use_cache: None
+  lr_schedule: {scaling: 'none', start_lr: 1.E-4, end_lr: 0., warmup_steps: 0}
+  lambda_chi: 0 # weight for additional chi loss term
+  lambda_spec: 0 # weight for additional powerspectrum loss term
+  last_filter: 'relu'
+  up_filter: 'relu'
+  down_filter: 'leaky'
+  
+tau_blur_upsample:
+  <<: *tau_vanilla
+  num_epochs: 300
+  lambda_chi: 0 # weight for additional chi loss term
+  lambda_spec: 0 # weight for additional powerspectrum loss term
+  trim: 16 # radius from edge where model is not held accountable for loss
+  full_scale: False
+  lr_schedule: {scaling: 'none', start_lr: 1.E-4, end_lr: 0., warmup_steps: 0}
+  blur: True
+  upsample: True
+  single_box: False
+  
+tau_blur_test:
+  <<: *tau_vanilla
+  num_epochs: 300
+  lambda_chi: 0 # weight for additional chi loss term
+  lambda_spec: 0 # weight for additional powerspectrum loss term
+  trim: 16 # radius from edge where model is not held accountable for loss
+  full_scale: False
+  lr_schedule: {scaling: 'none', start_lr: 1.E-4, end_lr: 0., warmup_steps: 0}
+  blur: True
+  upsample: True
+  single_box: True
+  
+tau_blur_self:
+  <<: *tau_vanilla
+  num_epochs: 300
+  lambda_chi: 0 # weight for additional chi loss term
+  lambda_spec: 0 # weight for additional powerspectrum loss term
+  trim: 16 # radius from edge where model is not held accountable for loss
+  full_scale: False
+  lr_schedule: {scaling: 'none', start_lr: 1.E-4, end_lr: 0., warmup_steps: 0}
+  blur: True
+  upsample: True
+  single_box: False
+  last_filter: 'self'
+  up_filter: 'self'
+  down_filter: 'self'
+  
+tau_blur_self_spec:
+  <<: *tau_vanilla
+  num_epochs: 300
+  lambda_chi: 0 # weight for additional chi loss term
+  lambda_spec: 1e-1 # weight for additional powerspectrum loss term
+  trim: 16 # radius from edge where model is not held accountable for loss
+  full_scale: False
+  lr_schedule: {scaling: 'none', start_lr: 1.E-4, end_lr: 0., warmup_steps: 0}
+  blur: True
+  upsample: True
+  single_box: False
+  last_filter: 'self'
+  up_filter: 'self'
+  down_filter: 'self'
+  
+tau_self:
+  <<: *tau_vanilla
+  num_epochs: 300
+  lambda_chi: 0 # weight for additional chi loss term
+  lambda_spec: 0 # weight for additional powerspectrum loss term
+  trim: 16 # radius from edge where model is not held accountable for loss
+  full_scale: False
+  lr_schedule: {scaling: 'none', start_lr: 1.E-4, end_lr: 0., warmup_steps: 0}
+  blur: False
+  upsample: False
+  single_box: False
+  last_filter: 'self'
+  up_filter: 'self'
+  down_filter: 'self'
+
+  
+new_flux_vanilla: &flux_vanilla
+  <<: *vanilla 
+  box_size: [512, 512]
+  data_size: 128
+  global_batch_size: 32
+  Nsamples: 8192
+  Nsamples_val: 512
+  N_in_channels: 5
+  N_out_channels: 1
+  train_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_flux.h5'
+  val_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_flux.h5'
+  num_epochs: 200
+  use_cache: None
+  trim: 4 # radius from edge where model is not held accountable for loss
+  full_scale: True
+  lr_schedule: {scaling: 'none', start_lr: 1.E-4, end_lr: 0., warmup_steps: 0}
+  blur: False
+  upsample: False
+  single_box: False
+  
+new_flux_spec:
+  <<: *flux_vanilla
+  lambda_spec: 3 # weight for additional powerspectrum loss term
+  
+new_flux_sig_spec:
+  <<: *flux_vanilla
+  lambda_spec: 2 # weight for additional powerspectrum loss term
+  last_filter: 'sigmoid'
+  
+new_flux_blur_spec:
+  <<: *flux_vanilla
+  lambda_spec: 3 # weight for additional powerspectrum loss term
+  last_filter: 'relu'
+  blur: True
+  
+new_flux_blur_sig_spec:
+  <<: *flux_vanilla
+  lambda_spec: 3 # weight for additional powerspectrum loss term
+  last_filter: 'sigmoid'
+  blur: True
+  
+flux_sigmoid:
+  <<: *vanilla
+  box_size: [512, 512]
+  data_size: 128
+  global_batch_size: 32
+  Nsamples: 8192
+  Nsamples_val: 512
+  N_in_channels: 5
+  N_out_channels: 1
+  train_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_flux.h5'
+  val_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_flux.h5'
+  num_epochs: 60
+  use_cache: None
+  
+flux_chi_spec:
+  <<: *vanilla
+  box_size: [512, 512]
+  data_size: 192
+  global_batch_size: 32
+  Nsamples: 8192
+  Nsamples_val: 512
+  N_in_channels: 5
+  N_out_channels: 1
+  train_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_flux.h5'
+  val_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_flux.h5'
+  num_epochs: 60
+  use_cache: None
+  lambda_chi: 1e-7 # weight for additional chi loss term
+  lambda_spec: 1 # weight for additional powerspectrum loss term
+  trim: 32 # radius from edge where model is not held accountable for loss
+  
+flux_spec_256:
+  <<: *vanilla
+  box_size: [512, 512]
+  data_size: 256
+  global_batch_size: 32
+  Nsamples: 2048
+  Nsamples_val: 128
+  N_in_channels: 5
+  N_out_channels: 1
+  train_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_flux.h5'
+  val_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_flux.h5'
+  num_epochs: 60
+  use_cache: None
+  lambda_chi: 0 # weight for additional chi loss term
+  lambda_spec: 1 # weight for additional powerspectrum loss term
+  trim: 16 # radius from edge where model is not held accountable for loss
+  lr_schedule: {scaling: 'none', start_lr: 1.E-4, end_lr: 0., warmup_steps: 0}
+  
+flux_spec_64:
+  <<: *vanilla
+  box_size: [512, 512]
+  data_size: 64
+  global_batch_size: 32
+  Nsamples: 32768
+  Nsamples_val: 4096
+  N_in_channels: 5
+  N_out_channels: 1
+  train_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_flux.h5'
+  val_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_flux.h5'
+  num_epochs: 60
+  use_cache: None
+  lambda_chi: 0 # weight for additional chi loss term
+  lambda_spec: 1 # weight for additional powerspectrum loss term
+  trim: 16 # radius from edge where model is not held accountable for loss
+  lr_schedule: {scaling: 'none', start_lr: 1.E-4, end_lr: 0., warmup_steps: 0}
+  
+flux_self_spec_256:
+  <<: *vanilla
+  box_size: [512, 512]
+  data_size: 256
+  global_batch_size: 32
+  Nsamples: 2048
+  Nsamples_val: 128
+  N_in_channels: 5
+  N_out_channels: 1
+  train_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_flux.h5'
+  val_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_flux.h5'
+  num_epochs: 100
+  use_cache: None
+  lambda_chi: 0 # weight for additional chi loss term
+  lambda_spec: 1 # weight for additional powerspectrum loss term
+  trim: 16 # radius from edge where model is not held accountable for loss
+  lr_schedule: {scaling: 'none', start_lr: 1.E-4, end_lr: 0., warmup_steps: 0}
+  last_filter: 'self'
+  
+flux_self_upsamp_spec:
+  <<: *vanilla
+  box_size: [512, 512]
+  data_size: 192
+  global_batch_size: 32
+  Nsamples: 8192
+  Nsamples_val: 512
+  N_in_channels: 5
+  N_out_channels: 1
+  train_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_flux.h5'
+  val_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_flux.h5'
+  num_epochs: 100
+  use_cache: None
+  lambda_chi: 0 # weight for additional chi loss term
+  lambda_spec: 1 # weight for additional powerspectrum loss term
+  trim: 16 # radius from edge where model is not held accountable for loss
+  lr_schedule: {scaling: 'none', start_lr: 1.E-4, end_lr: 0., warmup_steps: 0}
+  last_filter: 'self'
+  
+flux_self_96:
+  <<: *vanilla
+  box_size: [512, 512]
+  data_size: 96
+  global_batch_size: 128
+  Nsamples: 32768
+  Nsamples_val: 4096
+  N_in_channels: 5
+  N_out_channels: 1
+  train_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_flux.h5'
+  val_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_flux.h5'
+  num_epochs: 100
+  use_cache: None
+  lambda_chi: 0 # weight for additional chi loss term
+  lambda_spec: 0 # weight for additional powerspectrum loss term
+  trim: 16 # radius from edge where model is not held accountable for loss
+  full_scale: False
+  lr_schedule: {scaling: 'none', start_lr: 1.E-4, end_lr: 0., warmup_steps: 0}
+  
+  
+flux_self_upsamp_spec_96:
+  <<: *vanilla
+  box_size: [512, 512]
+  data_size: 96
+  global_batch_size: 128
+  Nsamples: 32768
+  Nsamples_val: 4096
+  N_in_channels: 5
+  N_out_channels: 1
+  train_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_flux.h5'
+  val_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_flux.h5'
+  num_epochs: 200
+  use_cache: None
+  lambda_chi: 0 # weight for additional chi loss term
+  lambda_spec: 1 # weight for additional powerspectrum loss term
+  trim: 16 # radius from edge where model is not held accountable for loss
+  full_scale: False
+  lr_schedule: {scaling: 'none', start_lr: 1.E-4, end_lr: 0., warmup_steps: 0}
+  last_filter: 'self'
+  up_filter: 'relu'
+  down_filter: 'leaky'
+  upsample: True
+  
+flux_self_upsamp_test_192:
+  <<: *vanilla
+  box_size: [256, 256]
+  data_size: 192
+  global_batch_size: 32
+  Nsamples: 2048
+  Nsamples_val: 128
+  N_in_channels: 5
+  N_out_channels: 1
+  train_path: '/pscratch/sd/c/cjacobus/Nyx_medium/train_s1_256_hydro.h5'
+  val_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_flux.h5'
+  num_epochs: 100
+  use_cache: None
+  lambda_chi: 0 # weight for additional chi loss term
+  lambda_spec: 0 # weight for additional powerspectrum loss term
+  trim: 32 # radius from edge where model is not held accountable for loss
+  lr_schedule: {scaling: 'none', start_lr: 1.E-4, end_lr: 0., warmup_steps: 0}
+  last_filter: 'self'
+  up_filter: 'relu'
+  down_filter: 'leaky'
+  upsample: True
+  
+flux_self_upsamp_test_128:
+  <<: *vanilla
+  box_size: [132, 512]
+  data_size: 128
+  global_batch_size: 32
+  Nsamples: 2048
+  Nsamples_val: 128
+  N_in_channels: 5
+  N_out_channels: 1
+  train_path: '/pscratch/sd/c/cjacobus/Nyx_medium/train_s1_256_hydro.h5'
+  val_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_flux.h5'
+  num_epochs: 100
+  use_cache: None
+  lambda_chi: 0 # weight for additional chi loss term
+  lambda_spec: 0 # weight for additional powerspectrum loss term
+  trim: 32 # radius from edge where model is not held accountable for loss
+  lr_schedule: {scaling: 'none', start_lr: 1.E-4, end_lr: 0., warmup_steps: 0}
+  last_filter: 'self'
+  up_filter: 'relu'
+  down_filter: 'leaky'
+  upsample: True
+  
+flux_relu_test_128:
+  <<: *vanilla
+  box_size: [132, 512]
+  data_size: 128
+  global_batch_size: 32
+  Nsamples: 2048
+  Nsamples_val: 128
+  N_in_channels: 5
+  N_out_channels: 1
+  train_path: '/pscratch/sd/c/cjacobus/Nyx_medium/train_s1_256_hydro.h5'
+  val_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_flux.h5'
+  num_epochs: 200
+  use_cache: None
+  lambda_chi: 0 # weight for additional chi loss term
+  lambda_spec: 0 # weight for additional powerspectrum loss term
+  trim: 32 # radius from edge where model is not held accountable for loss
+  lr_schedule: {scaling: 'none', start_lr: 1.E-4, end_lr: 0., warmup_steps: 0}
+  last_filter: 'relu'
+  up_filter: 'relu'
+  down_filter: 'leaky'
+  upsample: False
+  
+flux_relu_128:
+  <<: *vanilla
+  box_size: [512, 512]
+  data_size: 128
+  global_batch_size: 32
+  Nsamples: 2048
+  Nsamples_val: 128
+  N_in_channels: 5
+  N_out_channels: 1
+  train_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_flux.h5'
+  val_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_flux.h5'
+  num_epochs: 500
+  use_cache: None
+  lambda_chi: 0 # weight for additional chi loss term
+  lambda_spec: 0 # weight for additional powerspectrum loss term
+  trim: 32 # radius from edge where model is not held accountable for loss
+  lr_schedule: {scaling: 'none', start_lr: 1.E-4, end_lr: 0., warmup_steps: 0}
+  last_filter: 'relu'
+  up_filter: 'relu'
+  down_filter: 'leaky'
+  upsample: False
+  
+flux_self_blur_96:
+  <<: *vanilla
+  box_size: [512, 512]
+  data_size: 96
+  global_batch_size: 128
+  Nsamples: 32768
+  Nsamples_val: 4096
+  N_in_channels: 5
+  N_out_channels: 1
+  train_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_flux.h5'
+  val_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_flux.h5'
+  num_epochs: 100
+  use_cache: None
+  lambda_chi: 0 # weight for additional chi loss term
+  lambda_spec: 0 # weight for additional powerspectrum loss term
+  trim: 16 # radius from edge where model is not held accountable for loss
+  full_scale: False
+  lr_schedule: {scaling: 'none', start_lr: 1.E-4, end_lr: 0., warmup_steps: 0}
+  blur: True
+  upsample: True
+
+  
+flux_sigmoid_upsamp_spec_96:
+  <<: *vanilla
+  box_size: [512, 512]
+  data_size: 96
+  global_batch_size: 128
+  Nsamples: 32768
+  Nsamples_val: 4096
+  N_in_channels: 5
+  N_out_channels: 1
+  train_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_flux.h5'
+  val_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_flux.h5'
+  num_epochs: 200
+  use_cache: None
+  lambda_chi: 0 # weight for additional chi loss term
+  lambda_spec: 1 # weight for additional powerspectrum loss term
+  trim: 32 # radius from edge where model is not held accountable for loss
+  full_scale: False
+  lr_schedule: {scaling: 'none', start_lr: 1.E-4, end_lr: 0., warmup_steps: 0}
+  last_filter: 'sigmoid'
+  up_filter: 'self'
+  down_filter: 'self'
+  upsample: True
+  
+flux_sigmoid_blur_96:
+  <<: *vanilla
+  box_size: [512, 512]
+  data_size: 96
+  global_batch_size: 128
+  Nsamples: 32768
+  Nsamples_val: 4096
+  N_in_channels: 5
+  N_out_channels: 1
+  train_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_flux.h5'
+  val_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_flux.h5'
+  num_epochs: 200
+  use_cache: None
+  lambda_chi: 0 # weight for additional chi loss term
+  lambda_spec: 0 # weight for additional powerspectrum loss term
+  trim: 32 # radius from edge where model is not held accountable for loss
+  full_scale: False
+  lr_schedule: {scaling: 'none', start_lr: 1.E-4, end_lr: 0., warmup_steps: 0}
+  last_filter: 'sigmoid'
+  up_filter: 'self'
+  down_filter: 'self'
+  blur: True
+  upsample: True
+  
+flux_blur_test_96:
+  <<: *vanilla
+  box_size: [100, 512]
+  data_size: 96
+  global_batch_size: 128
+  Nsamples: 32768
+  Nsamples_val: 4096
+  N_in_channels: 5
+  N_out_channels: 1
+  train_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_flux.h5'
+  val_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_flux.h5'
+  num_epochs: 100
+  use_cache: None
+  lambda_chi: 0 # weight for additional chi loss term
+  lambda_spec: 0 # weight for additional powerspectrum loss term
+  trim: 16 # radius from edge where model is not held accountable for loss
+  full_scale: False
+  lr_schedule: {scaling: 'none', start_lr: 1.E-4, end_lr: 0., warmup_steps: 0}
+  blur: True
+  upsample: True
+  single_box: True
+  
+new_flux_blur_96:
+  <<: *vanilla
+  box_size: [512, 512]
+  data_size: 96
+  global_batch_size: 128
+  Nsamples: 32768
+  Nsamples_val: 4096
+  N_in_channels: 5
+  N_out_channels: 1
+  train_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_flux.h5'
+  val_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_flux.h5'
+  num_epochs: 500
+  use_cache: None
+  lambda_chi: 0 # weight for additional chi loss term
+  lambda_spec: 0 # weight for additional powerspectrum loss term
+  trim: 16 # radius from edge where model is not held accountable for loss
+  full_scale: False
+  lr_schedule: {scaling: 'none', start_lr: 1.E-4, end_lr: 0., warmup_steps: 0}
+  blur: True
+  upsample: True
+  single_box: False
+  
+new_flux_blur_only_96:
+  <<: *vanilla
+  box_size: [512, 512]
+  data_size: 96
+  global_batch_size: 128
+  Nsamples: 32768
+  Nsamples_val: 4096
+  N_in_channels: 5
+  N_out_channels: 1
+  train_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_flux.h5'
+  val_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_flux.h5'
+  num_epochs: 500
+  use_cache: None
+  lambda_chi: 0 # weight for additional chi loss term
+  lambda_spec: 0 # weight for additional powerspectrum loss term
+  trim: 16 # radius from edge where model is not held accountable for loss
+  full_scale: False
+  lr_schedule: {scaling: 'none', start_lr: 1.E-4, end_lr: 0., warmup_steps: 0}
+  blur: True
+  upsample: False
+  single_box: False
+  
+new_flux_upsamp_only_96:
+  <<: *vanilla
+  box_size: [512, 512]
+  data_size: 96
+  global_batch_size: 128
+  Nsamples: 32768
+  Nsamples_val: 4096
+  N_in_channels: 5
+  N_out_channels: 1
+  train_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_flux.h5'
+  val_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_flux.h5'
+  num_epochs: 500
+  use_cache: None
+  lambda_chi: 0 # weight for additional chi loss term
+  lambda_spec: 0 # weight for additional powerspectrum loss term
+  trim: 16 # radius from edge where model is not held accountable for loss
+  full_scale: False
+  lr_schedule: {scaling: 'none', start_lr: 1.E-4, end_lr: 0., warmup_steps: 0}
+  blur: False
+  upsample: True
+  single_box: False
+  
+new_flux_blur_192:
+  <<: *vanilla
+  box_size: [512, 512]
+  data_size: 192
+  global_batch_size: 16
+  Nsamples: 1048
+  Nsamples_val: 32
+  N_in_channels: 5
+  N_out_channels: 1
+  train_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_flux.h5'
+  val_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_flux.h5'
+  num_epochs: 500
+  use_cache: None
+  lambda_chi: 0 # weight for additional chi loss term
+  lambda_spec: 0 # weight for additional powerspectrum loss term
+  trim: 16 # radius from edge where model is not held accountable for loss
+  full_scale: False
+  lr_schedule: {scaling: 'none', start_lr: 1.E-4, end_lr: 0., warmup_steps: 0}
+  blur: True
+  upsample: True
+  single_box: False

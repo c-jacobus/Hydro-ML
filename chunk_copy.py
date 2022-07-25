@@ -21,10 +21,12 @@ from skimage.transform import rescale, resize, downscale_local_mean
 datapath = '/path/to/normalized/h5'
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--datapath", default='/pscratch/sd/c/cjacobus/ml-pm-training-2022/logs/hydro_vanilla/4GPU/00/infer_vanilla_size_128_trim_64.h5', type=str)
+parser.add_argument("--datapath", default='/pscratch/sd/c/cjacobus/ML_Hydro_train/logs/flux_sigmoid/16GPU/00/infer_flux_size_256_trim_64.h5', type=str)
 parser.add_argument("--size", default=128, type=int)
-parser.add_argument("--gpu", default=False, type=bool)
-parser.add_argument("--temp_path", default='/pscratch/sd/z/zarija/MLHydro/infer_vanilla_512.hdf5', type=str)
+parser.add_argument("--gpu", default=True, type=bool)
+parser.add_argument("--temp_path", default='/pscratch/sd/z/zarija/MLHydro/infer_flux_sub.hdf5', type=str)
+parser.add_argument("--native", default=False, type=bool)
+parser.add_argument("--derived", default=True, type=bool)
 args = parser.parse_args()
 
 size=args.size
@@ -57,7 +59,7 @@ print("Rank {} initialized file".format(world_rank))
 with h5py.File(args.datapath, 'r') as f:
     
     if  world_rank==0: print("Input data path: {}".format(args.datapath))
-    full_dim = f['native_fields']['baryon_density'][0,0,:].shape[0]
+    full_dim = 512 #f['native_fields']['baryon_density'][0,0,:].shape[0]
     if  world_rank==0: print("Dimension: {}".format(full_dim))
         
     slices=int(full_dim/size)
@@ -104,19 +106,26 @@ with h5py.File(args.datapath, 'r') as f:
                             print("Rank {} claimed chunk [{},{},{}]".format(world_rank,x,y,z))
 
                             # load chunk
-                            sliced_in_rho = f['native_fields']['baryon_density'][x1:x2, y1:y2, z1:z2].astype(dtype)
-                            sliced_in_vx = f['native_fields']['velocity_x'][x1:x2, y1:y2, z1:z2].astype(dtype)
-                            sliced_in_vy = f['native_fields']['velocity_y'][x1:x2, y1:y2, z1:z2].astype(dtype)
-                            sliced_in_vz = f['native_fields']['velocity_z'][x1:x2, y1:y2, z1:z2].astype(dtype)
-                            sliced_in_temp = f['native_fields']['temperature'][x1:x2, y1:y2, z1:z2].astype(dtype)
-                            print("Rank {} received chunk [{},{},{}], input shape: {}".format(world_rank,x,y,z,sliced_in_rho.shape))
+                            if args.native:
+                                sliced_in_rho = f['native_fields']['baryon_density'][x1:x2, y1:y2, z1:z2].astype(dtype)
+                                sliced_in_vx = f['native_fields']['velocity_x'][x1:x2, y1:y2, z1:z2].astype(dtype)
+                                sliced_in_vy = f['native_fields']['velocity_y'][x1:x2, y1:y2, z1:z2].astype(dtype)
+                                sliced_in_vz = f['native_fields']['velocity_z'][x1:x2, y1:y2, z1:z2].astype(dtype)
+                                sliced_in_temp = f['native_fields']['temperature'][x1:x2, y1:y2, z1:z2].astype(dtype)
+                                print("Rank {} received chunk [{},{},{}], input shape: {}".format(world_rank,x,y,z,sliced_in_rho.shape))
+                            if args.derived:
+                                sliced_in_tau = f['derived_fields']['tau_red'][x1:x2, y1:y2, z1:z2].astype(dtype)
+                                print("Rank {} received chunk [{},{},{}], input shape: {}".format(world_rank,x,y,z,sliced_in_tau.shape))
 
                             # write to file   
-                            hf['native_fields']['baryon_density'][x1_out:x2_out,y1_out:y2_out,z1_out:z2_out] = sliced_in_rho
-                            hf['native_fields']['velocity_x'][x1_out:x2_out,y1_out:y2_out,z1_out:z2_out] = sliced_in_vx
-                            hf['native_fields']['velocity_y'][x1_out:x2_out,y1_out:y2_out,z1_out:z2_out] = sliced_in_vy
-                            hf['native_fields']['velocity_z'][x1_out:x2_out,y1_out:y2_out,z1_out:z2_out] = sliced_in_vz
-                            hf['native_fields']['temperature'][x1_out:x2_out,y1_out:y2_out,z1_out:z2_out] = sliced_in_temp                            
+                            if args.native:
+                                hf['native_fields']['baryon_density'][x1_out:x2_out,y1_out:y2_out,z1_out:z2_out] = sliced_in_rho
+                                hf['native_fields']['velocity_x'][x1_out:x2_out,y1_out:y2_out,z1_out:z2_out] = sliced_in_vx
+                                hf['native_fields']['velocity_y'][x1_out:x2_out,y1_out:y2_out,z1_out:z2_out] = sliced_in_vy
+                                hf['native_fields']['velocity_z'][x1_out:x2_out,y1_out:y2_out,z1_out:z2_out] = sliced_in_vz
+                                hf['native_fields']['temperature'][x1_out:x2_out,y1_out:y2_out,z1_out:z2_out] = sliced_in_temp   
+                            if args.derived:
+                                hf['derived_fields']['tau_red'][x1_out:x2_out,y1_out:y2_out,z1_out:z2_out] = sliced_in_tau
                             print("Rank {} wrote chunk [{},{},{}] to file".format(world_rank,x,y,z))
 
 

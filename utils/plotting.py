@@ -6,6 +6,7 @@ from matplotlib.colors import Normalize
 
 def meanL1(gens, tars):
         """Compute MAE on test set for each of the fields"""
+        
         tar_hist, bin_edges = np.histogram(tars[:,4,:,:,:], bins=50)
         gen_hist, _ = np.histogram(gens[:,4,:,:,:], bins=bin_edges)
         centers = (bin_edges[:-1] + bin_edges[1:]) / 2
@@ -21,6 +22,7 @@ def meanL1(gens, tars):
         tar_hist, bin_edges = np.histogram(tars[:,0,:,:,:], bins=50)
         gen_hist, _ = np.histogram(gens[:,0,:,:,:], bins=bin_edges)
         centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+        
         plt.subplot(1,2,2)
         plt.errorbar(centers, tar_hist, yerr=np.sqrt(tar_hist), fmt='ks--', label='real')
         plt.errorbar(centers, gen_hist, yerr=np.sqrt(gen_hist), fmt='ro', label='generated')

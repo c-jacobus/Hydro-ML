@@ -60,15 +60,15 @@ class RandomJunkDataset(Dataset):
     def __init__(self, params):
         self.length = params.box_size
         self.size = params.data_size
-        self.RandInp = np.random.normal(size=(5, self.length, self.length, self.length)).astype(np.float32)
-        self.RandTar = np.random.normal(size=(5, self.length, self.length, self.length)).astype(np.float32)
+        self.RandInp = np.random.normal(size=(params.N_in_channels, self.length, self.length, self.length)).astype(np.float32)
+        self.RandTar = np.random.normal(size=(params.N_out_channels, self.length, self.length, self.length)).astype(np.float32)
         self.Nsamples = params.Nsamples
         self.rotate = RandomRotator()
 
     def __len__(self):
         return self.Nsamples
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx, params):
         x = np.random.randint(low=0, high=self.length-self.size)
         y = np.random.randint(low=0, high=self.length-self.size)
         z = np.random.randint(low=0, high=self.length-self.size)
@@ -96,9 +96,10 @@ class RandomCropDataset(Dataset):
         self.Nsamples = params.Nsamples if not validation else params.Nsamples_val
         self.rotate = RandomRotator()
         self.inmem = params.data_loader_config == 'inmem'
+        self.single_box = params.single_box
         
-        self.inp_buff = np.zeros((5, self.size, self.size, self.size), dtype=np.float32)
-        self.tar_buff = np.zeros((5, self.size, self.size, self.size), dtype=np.float32)
+        self.inp_buff = np.zeros((params.N_in_channels, self.size, self.size, self.size), dtype=np.float32)
+        self.tar_buff = np.zeros((params.N_out_channels, self.size, self.size, self.size), dtype=np.float32)
         if self.inmem:
             with h5py.File(self.fname, 'r') as f:
                 self.fine = f['fine'][...]
@@ -106,32 +107,48 @@ class RandomCropDataset(Dataset):
         self.file = None
 
     def _open_file(self):
-        logging.info("Dataloader: opening h5 file...")
+        # logging.info("Dataloader: opening h5 file...")
         self.file = h5py.File(self.fname, 'r')
 
     def __len__(self):
         return self.Nsamples
 
     def __getitem__(self, idx):
-        if not self.file and not self.inmem:
-            self._open_file()
-        x = np.random.randint(low=0, high=self.length-self.size)
-        y = np.random.randint(low=0, high=self.length-self.size)
-        z = np.random.randint(low=0, high=self.length-self.size)
-        if self.inmem:
-            self.inp_buff = self.coarse[:, x:x+self.size, y:y+self.size, z:z+self.size]
-            self.tar_buff = self.fine[:, x:x+self.size, y:y+self.size, z:z+self.size]
+        if self.single_box:
+            if self.inmem:
+                self.inp_buff = self.coarse[:, 0:self.size, 0:self.size, 0:self.size]
+                self.tar_buff = self.fine[:, 0:self.size, 0:self.size, 0:self.size]
+            else:
+                if not self.file:
+                    self._open_file()
+                self.inp_buff = self.file['coarse'][:, 0:self.size, 0:self.size, 0:self.size]
+                self.tar_buff = self.file['fine'][:, 0:self.size, 0:self.size, 0:self.size]
+            inp = np.copy(self.inp_buff)
+            tar = np.copy(self.tar_buff)
         else:
-            self.file['coarse'].read_direct(self.inp_buff,
-                                       np.s_[0:5, x:x+self.size, y:y+self.size, z:z+self.size],
-                                       np.s_[0:5, 0:self.size, 0:self.size, 0:self.size])
-            self.file['fine'].read_direct(self.tar_buff,
-                                       np.s_[0:5, x:x+self.size, y:y+self.size, z:z+self.size],
-                                       np.s_[0:5, 0:self.size, 0:self.size, 0:self.size])
-        logging.info("Dataloader: got chunk")
-        rand = np.random.randint(low=1, high=25)
-        inp = np.copy(self.rotate(self.inp_buff, rand))
-        tar = np.copy(self.rotate(self.tar_buff, rand))
+            if not self.file and not self.inmem:
+                self._open_file()
+            x = np.random.randint(low=0, high=self.length-self.size)
+            y = np.random.randint(low=0, high=self.length-self.size)
+            z = np.random.randint(low=0, high=self.length-self.size)
+            if self.inmem:
+                self.inp_buff = self.coarse[:, x:x+self.size, y:y+self.size, z:z+self.size]
+                self.tar_buff = self.fine[:, x:x+self.size, y:y+self.size, z:z+self.size]
+            else:
+                '''
+                self.file['coarse'].read_direct(self.inp_buff,
+                                           np.s_[0:5, x:x+self.size, y:y+self.size, z:z+self.size],
+                                           np.s_[0:5, 0:self.size, 0:self.size, 0:self.size])
+                self.file['fine'].read_direct(self.tar_buff,
+                                           np.s_[:, x:x+self.size, y:y+self.size, z:z+self.size],
+                                           np.s_[:, 0:self.size, 0:self.size, 0:self.size]) # was 6
+                '''
+                self.inp_buff = self.file['coarse'][:, x:x+self.size, y:y+self.size, z:z+self.size]
+                self.tar_buff = self.file['fine'][:, x:x+self.size, y:y+self.size, z:z+self.size]
+            # logging.info("Dataloader: got chunk")
+            rand = np.random.randint(low=1, high=25)
+            inp = np.copy(self.rotate(self.inp_buff, rand))
+            tar = np.copy(self.rotate(self.tar_buff, rand))
 
         # convert to tensor
         inp_t = torch.as_tensor(inp)

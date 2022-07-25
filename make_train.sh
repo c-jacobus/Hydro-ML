@@ -5,7 +5,8 @@
 #SBATCH --cpus-per-task 32
 #SBATCH --gpus-per-node 4
 #SBATCH -q regular
-#SBATCH -o %x-%j.out
+#SBATCH -J make_train_data
+#SBATCH -o logs/%x-%j.out
 
 args="${@}"
 

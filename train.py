@@ -25,8 +25,11 @@ from torch.cuda.amp import autocast, GradScaler
 from utils import get_data_loader_distributed, lr_schedule
 from networks import UNet
 from networks import New_UNet
+from networks import next_attn_UNet
 
 import apex.optimizers as aoptim
+
+import time
 
 def train(params, args, local_rank, world_rank, world_size):
     logging.info("Initializing Data Loaders...")
@@ -39,20 +42,33 @@ def train(params, args, local_rank, world_rank, world_size):
     logging.info('rank %d, begin data loader init'%world_rank)
     train_data_loader, val_data_loader = get_data_loader_distributed(params, world_rank, device.index)
     logging.info('rank %d, data loader initialized with config %s'%(world_rank, params.data_loader_config))
+    
+    if world_rank==0:
+        logging.info("Train Data Loader:")
+        start = time.perf_counter()
+        '''
+        for x in train_data_loader[0:5]:
+            logging.info(f"Rank {world_rank} data shapes {x[0].shape}, {x[1].shape}")
+        
+        stop = time.perf_counter()
+        logging.info(f"Rank {world_rank} Dataloader test took {stop - start:0.4f} seconds")
+        '''    
 
     # create model
-    logging.info("Initializing Model...")
+    if world_rank==0: logging.info("Initializing Model...")
     
     if params.model=='next': 
         model = New_UNet.UNet(params).to(device)
+    elif params.model=='attn': 
+        model = next_attn_UNet.UNet(params).to(device)
     else:
         model = UNet.UNet(params).to(device)
         
     # model = New_UNet.UNet(params).to(device)
-    logging.info("Initializing Weights...")
+    if world_rank==0: logging.info("Initializing Weights...")
     model.apply(model.get_weights_function(params.weight_init))
     
-    logging.info("Initializing Training Parameters...")
+    if world_rank==0: logging.info("Initializing Training Parameters...")
     if params.enable_amp:
         scaler = GradScaler()
     if params.distributed and not args.noddp:
@@ -86,11 +102,13 @@ def train(params, args, local_rank, world_rank, world_size):
     # select loss function
     if params.enable_jit:
         loss_func = UNet.loss_func_opt_final
-        lambda_rho = torch.zeros((1,5,1,1,1), dtype=torch.float32).to(device)
-        lambda_rho[:,0,:,:,:] = params.lambda_rho
+        lambda_chi = torch.zeros((1,5,1,1,1), dtype=torch.float32).to(device)
+        lambda_chi[:,0,:,:,:] = params.lambda_chi
     else:
         loss_func = UNet.loss_func
-        lambda_rho = params.lambda_rho
+        lambda_chi = params.lambda_chi
+        lambda_spec = params.lambda_spec
+        trim = params.trim
 
     # start training
     iters = 0
@@ -108,13 +126,18 @@ def train(params, args, local_rank, world_rank, world_size):
     if world_rank==0: logging.info("Starting Training Loop...")
 
     # Log initial loss on train and validation to tensorboard
-    if not args.enable_benchy:
+    if not args.enable_benchy and startEpoch==0:
         with torch.no_grad():
             inp, tar = map(lambda x: x.to(device), next(iter(train_data_loader)))
-            if world_rank==0: logging.info("Loaded Benchmark Data")
-            tr_loss = loss_func(model(inp), tar, lambda_rho)
+            #if world_rank==0: logging.info("Loaded Benchmark Data")
+            
+            tr_loss, L1, chi_loss, spec_loss = loss_func(model(inp), tar, lambda_chi, lambda_spec, trim)
+            #tr_loss = nn.functional.l1_loss(model(inp), tar)
+            
             inp, tar = map(lambda x: x.to(device), next(iter(val_data_loader)))
-            val_loss= loss_func(model(inp), tar, lambda_rho)
+            val_loss, L1, chi_loss, spec_loss = loss_func(model(inp), tar, lambda_chi, lambda_spec, trim)
+            #val_loss = nn.functional.l1_loss(model(inp), tar)
+            
             if params.distributed:
                 torch.distributed.all_reduce(tr_loss)
                 torch.distributed.all_reduce(val_loss)
@@ -146,7 +169,8 @@ def train(params, args, local_rank, world_rank, world_size):
             optimizer.zero_grad()
             with autocast(params.enable_amp):
                 gen = model(inp)
-                loss = loss_func(gen, tar, lambda_rho)
+                loss, L1, chi_loss, spec_loss = loss_func(gen, tar, lambda_chi, lambda_spec, trim)
+                #loss = nn.functional.l1_loss(gen, tar)
                 tr_loss.append(loss.item())
 
             if params.enable_amp:
@@ -178,6 +202,9 @@ def train(params, args, local_rank, world_rank, world_size):
         if world_rank==0: logging.info(f"Calculating Epoch {epoch + 1} Validation Metrics...")
         val_start = time.time()
         val_loss = []
+        val_L1 = []
+        val_chi = []
+        val_spec = []
         gens = []
         tars = []
         model.eval()
@@ -189,10 +216,14 @@ def train(params, args, local_rank, world_rank, world_size):
                         gen = model(inp)
                         gens.append(gen.detach().cpu().numpy())
                         tars.append(tar.detach().cpu().numpy())
-                        loss = loss_func(gen, tar, lambda_rho)
+                        loss, L1, chi_loss, spec_loss = loss_func(gen, tar, lambda_chi, lambda_spec, trim)
+                        #loss = nn.functional.l1_loss(gen, tar)
                         if params.distributed:
                             torch.distributed.all_reduce(loss)
                         val_loss.append(loss.item()/world_size)
+                        val_L1.append(L1.item()/world_size)
+                        val_chi.append(chi_loss/world_size)
+                        val_spec.append(spec_loss/world_size)
             val_end = time.time()
             gens = np.concatenate(gens, axis=0)
             tars = np.concatenate(tars, axis=0)
@@ -200,19 +231,30 @@ def train(params, args, local_rank, world_rank, world_size):
             if world_rank==0:
                 # Scalars
                 tboard_writer.add_scalar('Loss/valid', np.mean(val_loss), iters)
+                tboard_writer.add_scalar('Metrics/tau_L1', np.mean(val_L1), iters)
+                tboard_writer.add_scalar('Metrics/tau_chi', np.mean(val_chi), iters)
+                tboard_writer.add_scalar('Metrics/tau_spec', np.mean(val_spec), iters)
 
                 # Plots
-                fig, chi, L1score = meanL1(gens, tars)
-                tboard_writer.add_figure('pixhist', fig, iters, close=True)
-                tboard_writer.add_scalar('Metrics/chi', chi, iters)
-                tboard_writer.add_scalar('Metrics/rhoL1', L1score[0], iters)
-                tboard_writer.add_scalar('Metrics/vxL1', L1score[1], iters)
-                tboard_writer.add_scalar('Metrics/vyL1', L1score[2], iters)
-                tboard_writer.add_scalar('Metrics/vzL1', L1score[3], iters)
-                tboard_writer.add_scalar('Metrics/TL1', L1score[4], iters)
+                #fig, chi, L1score = meanL1(gens, tars)
+                
+                #net_loss, L1, chi_loss, spec_loss = loss_func(gens, tars, lambda_chi, lambda_spec, trim)
+                L1 = np.mean(np.abs(tars - gens)) 
+                
+                
+                #tboard_writer.add_figure('pixhist', fig, iters, close=True)
+                #tboard_writer.add_scalar('Metrics/chi', chi, iters)
+                #tboard_writer.add_scalar('Metrics/rhoL1', L1score[0], iters)
+                #tboard_writer.add_scalar('Metrics/vxL1', L1score[1], iters)
+                #tboard_writer.add_scalar('Metrics/vyL1', L1score[2], iters)
+                #tboard_writer.add_scalar('Metrics/vzL1', L1score[3], iters)
+                #tboard_writer.add_scalar('Metrics/TL1', L1score[4], iters)
+                
+                
 
-                fig = generate_images(inp.detach().cpu().numpy()[0], gens[-1], tars[-1])
-                tboard_writer.add_figure('genimg', fig, iters, close=True)
+
+                #fig = generate_images(inp.detach().cpu().numpy()[0], gens[-1], tars[-1])
+                #tboard_writer.add_figure('genimg', fig, iters, close=True)
 
                 logging.info('  Avg val loss=%f'%np.mean(val_loss))
                 logging.info('  Total validation time: {} sec'.format(val_end - val_start)) 

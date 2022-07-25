@@ -5,7 +5,8 @@
 #SBATCH --cpus-per-task 32
 #SBATCH --gpus-per-node 4
 #SBATCH -q regular
-#SBATCH -o %x-%j.out
+#SBATCH -J trainMLHydro
+#SBATCH -o logs/%x-%j.out
 
 LOGDIR=${SCRATCH}/ML_Hydro_train/logs
 mkdir -p ${LOGDIR}
