@@ -26,18 +26,26 @@ import math
 from mpi4py import MPI
 from utils.factor_to_fraction import *
 
+'''
+This will resize a given h5 file 
+using the pyramid resize scheme for hydro fields 
+and subsampling dervived fields
+in a chunk-wise manner
+
+for gimlet to run on the result, it is recomended that you make a duplicate of a Nyx simulation and overwrite it's fields
+'''
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--folder", default='/pscratch/sd/z/zarija/MLHydro/', type=str)
-parser.add_argument("--datapath", default='/pscratch/sd/z/zarija/MLHydro/L80_N4096_z3_s1.hdf5', type=str)
-parser.add_argument("--trim", default=8, type=int)
-parser.add_argument("--in_Mpc", default=80, type=int)
-parser.add_argument("--dummy", default=False, type=bool)
-parser.add_argument("--skip", default=False, type=bool)
-parser.add_argument("--template", default=True, type=bool)
-parser.add_argument("--temp_path", default='/pscratch/sd/z/zarija/MLHydro/invar_pyr05_sub.hdf5', type=str)
-parser.add_argument("--derived", default=True, type=bool)
-parser.add_argument("--norm", default=True, type=bool)
+parser.add_argument("--folder", default='/pscratch/sd/z/zarija/MLHydro/', type=str) # save folder for output
+parser.add_argument("--datapath", default='/pscratch/sd/z/zarija/MLHydro/L80_N4096_z3_s2.hdf5', type=str)
+parser.add_argument("--trim", default=8, type=int) # width of "crust" trimmed off the inside faces of chunks after resize 
+parser.add_argument("--in_Mpc", default=80, type=int) # input field width in Mpc/h
+parser.add_argument("--dummy", default=False, type=bool) # for testing purposes
+parser.add_argument("--skip", default=False, type=bool) # for testing purposes
+parser.add_argument("--template", default=True, type=bool) # whether or not to overwrite a template file, rather than making a new one
+parser.add_argument("--temp_path", default='/pscratch/sd/z/zarija/MLHydro/invar3_pyr05_s2.hdf5', type=str)
+parser.add_argument("--derived", default=True, type=bool) # whether or not to resize derived fields
+parser.add_argument("--naive", default=False, type=bool) # if true: use traditional skimage.transform.resize
 
 args = parser.parse_args()
 
@@ -51,111 +59,37 @@ name = MPI.Get_processor_name()
 local_rank = int(os.environ['SLURM_LOCALID'])
 
 
-
-
-def norm_rho(field):
-    #return np.log(field)/14
-    return np.log(field)
-    #return np.log((field+1))/10
-    #return field
-
-def i_norm_rho(field):
-    #return np.exp(14.*field) 
-    return np.exp(field) 
-    #return np.exp((field*10)) -1
-    #return field
-
-def norm_vel(field):
-    #return field/9e7
-    #return np.log((field))/17
-    return field
-
-def i_norm_vel(field):
-    #return field*9e7
-    #return np.exp((field)*17)
-    return field
-
-def norm_temp(field):
-    #return np.log(field)/8 -1.5
-    return np.log(field)
-    #return np.log((field))/8 -1
-    #return field
-
-def i_norm_temp(field):
-    #return np.exp(8.*(field + 1.5))
-    return np.exp(field)
-    #return np.exp((field+1)*8)
-    #return field
-
-def norm_HI(field):
-    #return (np.log(field)+23)/7
-    #return np.log(field)
-    return field
-
-def i_norm_HI(field):
-    #return np.exp((field*7)-23)
-    #return np.exp(field)
-    return field
-
-def norm_tau(field):
-    #return np.exp(-field)
-    return np.log(field)
-    #return field
-
-def i_norm_tau(field):
-    #return -np.log(field)
-    return np.exp(field)
-    #return field
     
-
-norms = {
-    'rho': norm_rho,
-    'vel': norm_vel,
-    'temp': norm_temp,
-    'HI': norm_HI,
-    'tau': norm_tau,
-}
-
-i_norms = {
-    'rho': i_norm_rho,
-    'vel': i_norm_vel,
-    'temp': i_norm_temp,
-    'HI': i_norm_HI,
-    'tau': i_norm_tau,
-}
-
-sigma = 1/2
-
-def my_resize(field, final_chunk_out, var, factor):
+# function to resize individual chunks of the large/HD field.
+# note different behavior for derived and native fields
+def my_resize(field, final_chunk_out, var, factor, naive):
     
     steps = int(math.log2(factor))
     
-    #if args.norm: 
-        #field = norms[var](field)
-       
-    if var == 'tau' or var == 'HI':
-        shape = field.shape
-        shape = tuple(int(ti/8) for ti in shape)
-        out = np.zeros(shape)
-        for x in [3,4]:
-            for y in [3,4]:
-                for y in [3,4]:
-                    out += field[x::8, y::8, z::8]
-        field = out/8
-                    
-        #field = field[::8, ::8, ::8]
+    if naive:
+        field = resize(field, final_chunk_out, anti_aliasing=True)
         
-    else:
-        for i in range(steps):
-            step_chunk_out = tuple([el*(2**(steps-i-1)) for el in final_chunk_out])
-            field = gaussian_filter(field, sigma=1/4, mode='reflect', truncate=12.0)
-            #field = field[::2, ::2, ::2]
+    else:   
+        if var == 'tau' or var == 'HI':
+            '''
+            shape = field.shape
+            shape = tuple(int(ti/8) for ti in shape)
+            out = np.zeros(shape)
+            for x in [3,4]:
+                for y in [3,4]:
+                    for y in [3,4]:
+                        out += field[x::8, y::8, z::8]
+            field = out/8
+            '''
+            field = field[3::8, 3::8, 3::8]
 
-            field = downscale_local_mean(field, (2,2,2) )
-            #field = resize(field, step_chunk_out, anti_aliasing=True, anti_aliasing_sigma=sigmas[var])
-    
-    #if args.norm: 
-        #field = i_norms[var](field)
+        else:
+            for i in range(steps):
+                step_chunk_out = tuple([el*(2**(steps-i-1)) for el in final_chunk_out])
+                field = gaussian_filter(field, sigma=1/4, mode='reflect', truncate=12.0)
+                #field = field[::2, ::2, ::2]
+
+                field = downscale_local_mean(field, (2,2,2) )
     
     return field
                                 
@@ -202,12 +136,13 @@ file_exists = exists(write_path)
 if  world_rank==0:
     print("Write path: {}".format(write_path))
     if file_exists: print("File already exists, resuming...")
-    else: print("File does not exist, initializing...")
 
-    
+
+# initialize the h5 file we're gonna write the resized fields to
 with h5py.File(write_path, 'a', driver='mpio', comm=MPI.COMM_WORLD) as hf: 
     
     if not args.template and not file_exists:
+        print("File does not exist, initializing...")
         hf.attrs['format'] = "nyx-lyaf"
 
         dom = hf.create_group("domain")
@@ -252,18 +187,21 @@ with h5py.File(write_path, 'a', driver='mpio', comm=MPI.COMM_WORLD) as hf:
     print("Rank {} initialized file".format(world_rank))
     
     if  world_rank==0: print("Sending {} chunks individually...".format(slices**3))  
-    time.sleep(world_rank*0.2)
+    time.sleep(world_rank*0.2) # take turns
     
+    # itterate through chunks
     if not args.dummy: 
         for x in range(slices):
             for y in range(slices):
                 for z in range(slices):
                     
+                    # there was an issue where multiple gpus would resize the same chunk, next 4 lines is a crude work-around 
                     if hf['chunk_complete'][x,y,z] == 0:
                         time.sleep(world_rank*0.1)
                         if hf['chunk_complete'][x,y,z] == 0:
                             hf['chunk_complete'][x,y,z] = 0.5
                             print("Rank {} claimed chunk [{},{},{}]".format(world_rank,x,y,z))
+                            
                             start = time.perf_counter()
                             
                             x1_in = int(x*in_chunk_size)
@@ -317,15 +255,15 @@ with h5py.File(write_path, 'a', driver='mpio', comm=MPI.COMM_WORLD) as hf:
                                                    out_chunk_size+z_out_minus+z_out_plus)
                             
                             
-                            chunk_rho = my_resize(sliced_in_rho, this_chunk_out_size, 'rho', factor)
-                            chunk_vx = my_resize(sliced_in_vx, this_chunk_out_size, 'vel', factor)
-                            chunk_vy = my_resize(sliced_in_vy, this_chunk_out_size, 'vel', factor)
-                            chunk_vz = my_resize(sliced_in_vz, this_chunk_out_size, 'vel', factor)
-                            chunk_temp = my_resize(sliced_in_temp, this_chunk_out_size, 'temp', factor)
+                            chunk_rho = my_resize(sliced_in_rho, this_chunk_out_size, 'rho', factor, args.naive)
+                            chunk_vx = my_resize(sliced_in_vx, this_chunk_out_size, 'vel', factor, args.naive)
+                            chunk_vy = my_resize(sliced_in_vy, this_chunk_out_size, 'vel', factor, args.naive)
+                            chunk_vz = my_resize(sliced_in_vz, this_chunk_out_size, 'vel', factor, args.naive)
+                            chunk_temp = my_resize(sliced_in_temp, this_chunk_out_size, 'temp', factor, args.naive)
                             if args.derived:
-                                chunk_HI = my_resize(sliced_in_HI, this_chunk_out_size, 'HI', factor)
-                                chunk_t1 = my_resize(sliced_in_t1, this_chunk_out_size, 'tau', factor)
-                                chunk_t2 = my_resize(sliced_in_t2, this_chunk_out_size, 'tau', factor)
+                                chunk_HI = my_resize(sliced_in_HI, this_chunk_out_size, 'HI', factor, args.naive)
+                                chunk_t1 = my_resize(sliced_in_t1, this_chunk_out_size, 'tau', factor, args.naive)
+                                chunk_t2 = my_resize(sliced_in_t2, this_chunk_out_size, 'tau', factor, args.naive)
 
                             stop = time.perf_counter()
                             print("Rank {} resized chunk [{},{},{}], output shape: {}, took {}s".format(world_rank,x,y,z,chunk_rho.shape, round(stop-start, 1)))

@@ -17,15 +17,21 @@ import logging
 from skimage import data, color
 from skimage.transform import rescale, resize, downscale_local_mean
 
+'''
+This will normalize fields from two given h5 files 
+and write them to a new file in the coarse/fine format used for training  
+'''
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--datapath", default='/pscratch/sd/z/zarija/MLHydro/L80_N512_z3_s1.hdf5', type=str)
-parser.add_argument("--datapath_2", default='/pscratch/sd/z/zarija/MLHydro/invar_pyr05_sub.hdf5', type=str)
-parser.add_argument("--size", default=128, type=int)
+parser.add_argument("--datapath", default='/pscratch/sd/z/zarija/MLHydro/L80_N512_z3_s2.hdf5', type=str) # coarse fields
+parser.add_argument("--datapath_2", default='/pscratch/sd/z/zarija/MLHydro/invar_pyr05_sub.hdf5', type=str) # fine fields
+parser.add_argument("--size", default=128, type=int) # chunk width 
 
-parser.add_argument("--out_shape", default=512, type=int)
-parser.add_argument("--save_path", default='/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_flux.h5', type=str)
+parser.add_argument("--out_shape", default=512, type=int) #output width 
+parser.add_argument("--derived", default=False, type=bool) # TRUE: save derived, FALSE: save hydro
+parser.add_argument("--flux", default=True, type=bool) # TRUE: save flux, FALSE: save log-normed tau (only if derived=True)
+parser.add_argument("--save_path", default='/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_invar3_hydro.h5', type=str)
 args = parser.parse_args()
 
 size=args.size
@@ -75,7 +81,8 @@ with h5py.File(args.save_path, 'a', driver='mpio', comm=MPI.COMM_WORLD) as hf:
 
         # rho = hf.create_dataset("native_fields/baryon_density", data=np.exp(14.*final[0,0,:,:,:]))
         coarse = hf.create_dataset("coarse", (5, full_dim,full_dim,full_dim,), dtype='<f4')
-        fine = hf.create_dataset("fine", (1, full_dim,full_dim,full_dim), dtype='<f4')
+        ch = 1 if args.derived else 5
+        fine = hf.create_dataset("fine", (ch, full_dim,full_dim,full_dim), dtype='<f4')
         
         '''
         coarse = hf.create_dataset("coarse", (full_dim,full_dim,full_dim, 5), dtype='<f4')
@@ -145,32 +152,40 @@ with h5py.File(args.save_path, 'a', driver='mpio', comm=MPI.COMM_WORLD) as hf:
                         print("Rank {} wrote coarse chunk [{},{},{}] to file".format(world_rank,x,y,z))
 
                         # load chunk
-                        sliced_in_rho = f2['native_fields']['baryon_density'][x1:x2, y1:y2, z1:z2].astype(dtype)
-                        sliced_in_vx = f2['native_fields']['velocity_x'][x1:x2, y1:y2, z1:z2].astype(dtype)
-                        sliced_in_vy = f2['native_fields']['velocity_y'][x1:x2, y1:y2, z1:z2].astype(dtype)
-                        sliced_in_vz = f2['native_fields']['velocity_z'][x1:x2, y1:y2, z1:z2].astype(dtype)
-                        sliced_in_temp = f2['native_fields']['temperature'][x1:x2, y1:y2, z1:z2].astype(dtype)
-                        sliced_in_tau = f2['derived_fields']['tau_red'][x1:x2, y1:y2, z1:z2].astype(dtype)
+                        if not args.derived:
+                            sliced_in_rho = f2['native_fields']['baryon_density'][x1:x2, y1:y2, z1:z2].astype(dtype)
+                            sliced_in_vx = f2['native_fields']['velocity_x'][x1:x2, y1:y2, z1:z2].astype(dtype)
+                            sliced_in_vy = f2['native_fields']['velocity_y'][x1:x2, y1:y2, z1:z2].astype(dtype)
+                            sliced_in_vz = f2['native_fields']['velocity_z'][x1:x2, y1:y2, z1:z2].astype(dtype)
+                            sliced_in_temp = f2['native_fields']['temperature'][x1:x2, y1:y2, z1:z2].astype(dtype)
+                        else:
+                            sliced_in_der = f2['derived_fields']['tau_red'][x1:x2, y1:y2, z1:z2].astype(dtype)
                         print("Rank {} received fine chunk [{},{},{}], input shape: {}".format(world_rank,x,y,z,sliced_in_rho.shape))
 
                         # normalize
-                        sliced_in_rho = np.log(sliced_in_rho)/14
-                        sliced_in_vx = sliced_in_vx/9e7
-                        sliced_in_vy = sliced_in_vy/9e7
-                        sliced_in_vz = sliced_in_vz/9e7
-                        sliced_in_temp = np.log(sliced_in_temp)/8 -1.5
-                        
-                        #sliced_in_tau = np.log(sliced_in_tau+1)/20
-                        sliced_in_tau = np.exp(-sliced_in_tau)
+                        if not args.derived:
+                            sliced_in_rho = np.log(sliced_in_rho)/14
+                            sliced_in_vx = sliced_in_vx/9e7
+                            sliced_in_vy = sliced_in_vy/9e7
+                            sliced_in_vz = sliced_in_vz/9e7
+                            sliced_in_temp = np.log(sliced_in_temp)/8 -1.5
+                        else:
+                            if args.flux:
+                                sliced_in_der = np.exp(-sliced_in_der)
+                            else:
+                                sliced_in_der = np.log(sliced_in_der+1)/20
+                            
                         print("Rank {} normalized fine chunk [{},{},{}]".format(world_rank,x,y,z))
 
-                        # write to file   
-                        #hf['fine'][0, x1:x2, y1:y2, z1:z2] = sliced_in_rho
-                        #hf['fine'][1, x1:x2, y1:y2, z1:z2] = sliced_in_vx
-                        #hf['fine'][2, x1:x2, y1:y2, z1:z2] = sliced_in_vy
-                        #hf['fine'][3, x1:x2, y1:y2, z1:z2] = sliced_in_vz
-                        #hf['fine'][4, x1:x2, y1:y2, z1:z2] = sliced_in_temp
-                        hf['fine'][0, x1:x2, y1:y2, z1:z2] = sliced_in_tau
+                        # write to file  
+                        if not args.derived:
+                            hf['fine'][0, x1:x2, y1:y2, z1:z2] = sliced_in_rho
+                            hf['fine'][1, x1:x2, y1:y2, z1:z2] = sliced_in_vx
+                            hf['fine'][2, x1:x2, y1:y2, z1:z2] = sliced_in_vy
+                            hf['fine'][3, x1:x2, y1:y2, z1:z2] = sliced_in_vz
+                            hf['fine'][4, x1:x2, y1:y2, z1:z2] = sliced_in_temp
+                        else:
+                            hf['fine'][0, x1:x2, y1:y2, z1:z2] = sliced_in_der
                         print("Rank {} wrote fine chunk [{},{},{}] to file".format(world_rank,x,y,z))
 
 hf.close()

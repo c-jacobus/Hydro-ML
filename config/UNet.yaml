@@ -7,6 +7,7 @@ base: &base
   lambda_spec: 0 # weight for additional powerspectrum loss term
   trim: 0 # radius from edge where model is not held accountable for loss
   full_scale: True # whether or not to use all 6 of the scales in U-Net
+  dense: False # whether or not to use extra stride-1 layers in the U-Net
   global_batch_size: 64 # number of samples per training batch
   base_batch_size: 64 # single GPU batch size
   Nsamples: 65536
@@ -63,223 +64,7 @@ vanilla: &vanilla
   train_path: '/pscratch/sd/p/pharring/Nyx_nbod2hydro/normalized_data/train.h5'
   val_path: '/pscratch/sd/p/pharring/Nyx_nbod2hydro/normalized_data/test.h5'
   use_cache: '/tmp/'
-  
-vanilla256:
-  <<: *vanilla
-  data_size: 256
-  Nsamples: 1024
-  Nsamples_val: 32
-  global_batch_size: 4
-  num_epochs: 40
-  
-hydro_vanilla:
-  <<: *vanilla
-  box_size: [512, 512]
-  data_size: 128
-  global_batch_size: 32
-  Nsamples: 8192
-  Nsamples_val: 512
-  N_in_channels: 5
-  train_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512.h5'
-  val_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512.h5'
-  num_epochs: 40
-  use_cache: '/tmp/'
-  
-hydro_vanilla_256:
-  <<: *vanilla
-  box_size: [512, 512]
-  data_size: 256
-  global_batch_size: 16
-  Nsamples: 1024
-  Nsamples_val: 32
-  N_in_channels: 5
-  train_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512.h5'
-  val_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512.h5'
-  num_epochs: 40
-  use_cache: None
-  
-hydro_vanilla_big:
-  <<: *vanilla
-  box_size: [4096, 4096]
-  data_size: 128
-  global_batch_size: 32
-  Nsamples: 1024
-  Nsamples_val: 256
-  N_in_channels: 5
-  train_path: '/pscratch/sd/c/cjacobus/Nyx_4096_small/train_4096.h5'
-  val_path: '/pscratch/sd/c/cjacobus/Nyx_4096_small/train_4096.h5'
-  num_epochs: 40
-  use_cache: None
-  
-hydro_vanilla_flux:
-  <<: *vanilla
-  box_size: [512, 512]
-  data_size: 128
-  global_batch_size: 32
-  Nsamples: 8192
-  Nsamples_val: 512
-  N_in_channels: 5
-  train_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_flux.h5'
-  val_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_flux.h5'
-  num_epochs: 40
-  use_cache: None  
-  N_out_channels: 6
-  
-
-next_trial: &next_trial
-  <<: *base
-  model: 'next'
-  Nsamples: 8192
-  Nsamples_val: 512
-  num_epochs: 20
-  box_size: [1024, 1024]
-  data_size: 128
-  num_data_workers: 8
-  data_loader_config: 'lowmem'
-  global_batch_size: 32
-  lambda_chi: 1e-2
-  lr_schedule: {scaling: 'none', start_lr: 1.E-4, end_lr: 1.E-4, warmup_steps: 0}
-  train_path: '/pscratch/sd/p/pharring/Nyx_nbod2hydro/normalized_data/train.h5'
-  val_path: '/pscratch/sd/p/pharring/Nyx_nbod2hydro/normalized_data/test.h5'
-  use_cache: '/tmp/'
-  
-next_amp:
-  <<: *next_trial
-  enable_amp: True
-
-next256:
-  <<: *next_trial
-  data_size: 256
-  Nsamples: 1024
-  Nsamples_val: 32
-  global_batch_size: 4
-  num_epochs: 40
-  
-hydro_next:
-  <<: *next_trial
-  box_size: [512, 512]
-  data_size: 128
-  N_in_channels: 5
-  train_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512.h5'
-  val_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512.h5'
-  num_epochs: 40
-
-hydro_next_big:
-  <<: *next_trial
-  box_size: [4096, 4096]
-  data_size: 128
-  global_batch_size: 32
-  Nsamples: 1024
-  Nsamples_val: 128
-  N_in_channels: 5
-  train_path: '/pscratch/sd/c/cjacobus/Nyx_4096/train_s1_4096.h5'
-  val_path: '/pscratch/sd/c/cjacobus/Nyx_4096/train_s1_4096.h5'
-  num_epochs: 40
-  use_cache: None
-
-hydro_next_attn:
-  <<: *next_trial
-  model: 'attn'
-  box_size: [512, 512]
-  data_size: 128
-  N_in_channels: 5
-  train_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512.h5'
-  val_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512.h5'
-  num_epochs: 40
-  global_batch_size: 32
-  use_cache: None
-
-
-new_tau_vanilla: &tau_vanilla
-  <<: *vanilla
-  box_size: [512, 512]
-  data_size: 128
-  global_batch_size: 32
-  Nsamples: 8192
-  Nsamples_val: 512
-  N_in_channels: 5
-  N_out_channels: 1
-  train_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_tau.h5'
-  val_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_tau.h5'
-  num_epochs: 300
-  use_cache: None
-  lr_schedule: {scaling: 'none', start_lr: 1.E-4, end_lr: 0., warmup_steps: 0}
-  lambda_chi: 0 # weight for additional chi loss term
-  lambda_spec: 0 # weight for additional powerspectrum loss term
-  last_filter: 'relu'
-  up_filter: 'relu'
-  down_filter: 'leaky'
-  
-tau_blur_upsample:
-  <<: *tau_vanilla
-  num_epochs: 300
-  lambda_chi: 0 # weight for additional chi loss term
-  lambda_spec: 0 # weight for additional powerspectrum loss term
-  trim: 16 # radius from edge where model is not held accountable for loss
-  full_scale: False
-  lr_schedule: {scaling: 'none', start_lr: 1.E-4, end_lr: 0., warmup_steps: 0}
-  blur: True
-  upsample: True
-  single_box: False
-  
-tau_blur_test:
-  <<: *tau_vanilla
-  num_epochs: 300
-  lambda_chi: 0 # weight for additional chi loss term
-  lambda_spec: 0 # weight for additional powerspectrum loss term
-  trim: 16 # radius from edge where model is not held accountable for loss
-  full_scale: False
-  lr_schedule: {scaling: 'none', start_lr: 1.E-4, end_lr: 0., warmup_steps: 0}
-  blur: True
-  upsample: True
-  single_box: True
-  
-tau_blur_self:
-  <<: *tau_vanilla
-  num_epochs: 300
-  lambda_chi: 0 # weight for additional chi loss term
-  lambda_spec: 0 # weight for additional powerspectrum loss term
-  trim: 16 # radius from edge where model is not held accountable for loss
-  full_scale: False
-  lr_schedule: {scaling: 'none', start_lr: 1.E-4, end_lr: 0., warmup_steps: 0}
-  blur: True
-  upsample: True
-  single_box: False
-  last_filter: 'self'
-  up_filter: 'self'
-  down_filter: 'self'
-  
-tau_blur_self_spec:
-  <<: *tau_vanilla
-  num_epochs: 300
-  lambda_chi: 0 # weight for additional chi loss term
-  lambda_spec: 1e-1 # weight for additional powerspectrum loss term
-  trim: 16 # radius from edge where model is not held accountable for loss
-  full_scale: False
-  lr_schedule: {scaling: 'none', start_lr: 1.E-4, end_lr: 0., warmup_steps: 0}
-  blur: True
-  upsample: True
-  single_box: False
-  last_filter: 'self'
-  up_filter: 'self'
-  down_filter: 'self'
-  
-tau_self:
-  <<: *tau_vanilla
-  num_epochs: 300
-  lambda_chi: 0 # weight for additional chi loss term
-  lambda_spec: 0 # weight for additional powerspectrum loss term
-  trim: 16 # radius from edge where model is not held accountable for loss
-  full_scale: False
-  lr_schedule: {scaling: 'none', start_lr: 1.E-4, end_lr: 0., warmup_steps: 0}
-  blur: False
-  upsample: False
-  single_box: False
-  last_filter: 'self'
-  up_filter: 'self'
-  down_filter: 'self'
-
-  
+    
 new_flux_vanilla: &flux_vanilla
   <<: *vanilla 
   box_size: [512, 512]
@@ -300,16 +85,117 @@ new_flux_vanilla: &flux_vanilla
   upsample: False
   single_box: False
   
-new_flux_spec:
+new_realflux:
+  <<: *flux_vanilla
+  train_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_real_flux.h5'
+  val_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_real_flux.h5'
+  
+naive_flux:
+  <<: *flux_vanilla
+  train_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_naive_flux.h5'
+  val_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_naive_flux.h5'
+  
+new_dense_realflux:
+  <<: *flux_vanilla
+  train_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_real_flux.h5'
+  val_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_real_flux.h5'
+  dense: True 
+  num_epochs: 600
+  
+new_dense_invar03_flux:
+  <<: *flux_vanilla
+  train_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_invar3_flux.h5'
+  val_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_invar3_flux.h5'
+  dense: True 
+  num_epochs: 600
+  
+invar03_dense:
+  <<: *flux_vanilla
+  train_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_invar3_flux.h5'
+  val_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_invar3_flux.h5'
+  dense: True 
+  num_epochs: 600
+  trim: 2 # radius from edge where model is not held accountable for loss
+  
+invar03_dense_blur:
+  <<: *flux_vanilla
+  train_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_invar3_flux.h5'
+  val_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_invar3_flux.h5'
+  dense: True 
+  num_epochs: 600
+  blur: True
+  upsample: False
+  
+invar03_dense_fft:
+  <<: *flux_vanilla
+  train_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_invar3_flux.h5'
+  val_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_invar3_flux.h5'
+  dense: True 
+  num_epochs: 600
+  lambda_spec: 3 # weight for additional powerspectrum loss term
+  trim: 2 # radius from edge where model is not held accountable for loss
+  
+invar03_dense_logfft:
+  <<: *flux_vanilla
+  train_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_invar3_flux.h5'
+  val_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_invar3_flux.h5'
+  dense: True 
+  num_epochs: 600
+  lambda_spec: 3 # weight for additional powerspectrum loss term
+  trim: 2 # radius from edge where model is not held accountable for loss
+  
+invar03_dense_sig:
+  <<: *flux_vanilla
+  train_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_invar3_flux.h5'
+  val_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_invar3_flux.h5'
+  dense: True 
+  num_epochs: 600
+  trim: 2 # radius from edge where model is not held accountable for loss
+  last_filter: 'sigmoid'
+  lambda_spec: 0
+  
+invar03_dense_sig_rev:
+  <<: *flux_vanilla
+  train_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_invar3_flux.h5'
+  val_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_invar3_flux.h5'
+  dense: True 
+  num_epochs: 600
+  trim: 2 # radius from edge where model is not held accountable for loss
+  last_filter: 'sigmoid'
+  lambda_spec: 2
+  
+invar03_dense_sig_fft:
+  <<: *flux_vanilla
+  train_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_invar3_flux.h5'
+  val_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_invar3_flux.h5'
+  dense: True 
+  num_epochs: 600
+  trim: 2 # radius from edge where model is not held accountable for loss
+  last_filter: 'sigmoid'
+  lambda_spec: 2
+  
+invar03_dense_sig_fft_pdf:
+  <<: *flux_vanilla
+  train_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_invar3_flux.h5'
+  val_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_invar3_flux.h5'
+  dense: True 
+  num_epochs: 600
+  trim: 2 # radius from edge where model is not held accountable for loss
+  last_filter: 'sigmoid'
+  lambda_spec: 2
+  lambda_chi: 2e-6
+  
+new_flux_fft:
   <<: *flux_vanilla
   lambda_spec: 3 # weight for additional powerspectrum loss term
+  trim: 0 # radius from edge where model is not held accountable for loss
   
 new_flux_sig_spec:
   <<: *flux_vanilla
   lambda_spec: 2 # weight for additional powerspectrum loss term
   last_filter: 'sigmoid'
   
-new_flux_blur_spec:
+new_flux_blur_fft:
   <<: *flux_vanilla
   lambda_spec: 3 # weight for additional powerspectrum loss term
   last_filter: 'relu'
@@ -321,6 +207,32 @@ new_flux_blur_sig_spec:
   last_filter: 'sigmoid'
   blur: True
   
+new_flux_dense:
+  <<: *flux_vanilla
+  dense: True 
+  num_epochs: 600
+  lambda_spec: 0 # weight for additional powerspectrum loss term
+  
+rev_flux_dense:
+  <<: *flux_vanilla
+  dense: True 
+  num_epochs: 700
+  lambda_spec: 1 # weight for additional powerspectrum loss term
+  train_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_invar3_flux.h5'
+  val_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_invar3_flux.h5'
+  trim: 2 # radius from edge where model is not held accountable for loss
+  
+new_flux_dense_fft:
+  <<: *flux_vanilla
+  dense: True 
+  num_epochs: 600
+  lambda_spec: 3 # weight for additional powerspectrum loss term
+  trim: 2 # radius from edge where model is not held accountable for loss
+  
+  
+# =======================================================================================================
+
+
 flux_sigmoid:
   <<: *vanilla
   box_size: [512, 512]
@@ -735,3 +647,38 @@ new_flux_blur_192:
   blur: True
   upsample: True
   single_box: False
+  
+  #=========================================================================================================================
+  
+valid_dense_sig_fft_pdf:
+  <<: *flux_vanilla
+  train_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_invar3_flux.h5'
+  val_path: '/pscratch/sd/c/cjacobus/Nyx_512/valid_s2_512_invar3_flux.h5'
+  dense: True 
+  num_epochs: 600
+  trim: 2 # radius from edge where model is not held accountable for loss
+  last_filter: 'sigmoid'
+  lambda_spec: 2
+  lambda_chi: 2e-6
+  
+valid_dense_sig_fft:
+  <<: *flux_vanilla
+  train_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_invar3_flux.h5'
+  val_path: '/pscratch/sd/c/cjacobus/Nyx_512/valid_s2_512_invar3_flux.h5'
+  dense: True 
+  num_epochs: 600
+  trim: 2 # radius from edge where model is not held accountable for loss
+  last_filter: 'sigmoid'
+  lambda_spec: 2
+  lambda_chi: 0
+  
+valid_fft:
+  <<: *flux_vanilla
+  train_path: '/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_invar3_flux.h5'
+  val_path: '/pscratch/sd/c/cjacobus/Nyx_512/valid_s2_512_invar3_flux.h5'
+  dense: True 
+  num_epochs: 600
+  trim: 2 # radius from edge where model is not held accountable for loss
+  last_filter: 'sigmoid'
+  lambda_spec: 1
+  lambda_chi: 0

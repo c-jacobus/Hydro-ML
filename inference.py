@@ -16,28 +16,32 @@ import datetime
 import time
 import sys
 import logging
+from os.path import exists
 
-
-datapath = '/path/to/normalized/h5'
+'''
+This performs chunk-wise inference on a given file using a given config
+'''
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--folder", default='/pscratch/sd/c/cjacobus/ML_Hydro_train/logs/', type=str)
+parser.add_argument("--folder", default='/pscratch/sd/c/cjacobus/ML_Hydro_train/logs/', type=str) # where logs/ckpts are saved
 
-parser.add_argument("--config", default='new_flux_spec', type=str)
+parser.add_argument("--config", default='valid_dense_sig_fft', type=str) # .yaml config name
 
-parser.add_argument("--subsec", default='16GPU/00/', type=str)
-parser.add_argument("--weights", default='training_checkpoints/ckpt.tar', type=str)
-parser.add_argument("--yaml_config", default='./config/UNet.yaml', type=str)
-parser.add_argument("--datapath", default='/pscratch/sd/c/cjacobus/Nyx_512/train_s1_512_flux.h5', type=str)
-parser.add_argument("--trim", default=128, type=int)
-parser.add_argument("--size", default=128, type=int)
-parser.add_argument("--full_dim", default=512, type=int)
-parser.add_argument("--flavor", default='flux', type=str)
-parser.add_argument("--dummy", default=False, type=bool)
-parser.add_argument("--skip", default=False, type=bool)
-parser.add_argument("--native", default=False, type=bool)
-parser.add_argument("--derived", default=True, type=bool)
-parser.add_argument("--flux", default=True, type=bool)
+parser.add_argument("--subsec", default='16GPU/00/', type=str) # train has these saved like this by GPU count
+parser.add_argument("--weights", default='training_checkpoints/ckpt.tar', type=str) # as per train defination
+parser.add_argument("--yaml_config", default='./config/UNet.yaml', type=str) # .yaml name
+parser.add_argument("--datapath", default='/pscratch/sd/c/cjacobus/Nyx_512/valid_s2_512_invar3_flux.h5', type=str) # file to do inference on
+parser.add_argument("--trim", default=128, type=int) # width of "crust" to trim off the inside faced of inferred chunks
+parser.add_argument("--size", default=128, type=int) # width to keep of inferred chunks 
+parser.add_argument("--full_dim", default=512, type=int) # width of total field
+parser.add_argument("--flavor", default='flux', type=str) # OLD, if use attention model
+parser.add_argument("--dummy", default=False, type=bool) # for debugging
+parser.add_argument("--skip", default=False, type=bool) # just infer one chunk
+parser.add_argument("--native", default=False, type=bool) # infer native?
+parser.add_argument("--derived", default=True, type=bool) # infer derived?
+parser.add_argument("--flux", default=True, type=bool) # model trained on flux or tau
+parser.add_argument("--template", default=True, type=bool) # whether or not to overwrite a template file, rather than making a new one
+parser.add_argument("--temp_path", default='/pscratch/sd/z/zarija/MLHydro/valid_UNet_sig_fft.hdf5', type=str)
 args = parser.parse_args()
 
 params = YParams(os.path.abspath(args.yaml_config), args.config)
@@ -108,52 +112,64 @@ if  world_rank==0:
     else:
         print("Initialized dummy weights [✓]")
         
-if not args.dummy: 
-    save_name = "infer_{}_size_{}_trim_{}.h5".format(args.flavor,size,trim)
-    save_path = os.path.join(folder_path, save_name)
+if not args.dummy:     
+    if args.template:
+        save_path = args.temp_path
+    else: 
+        save_name = "infer_{}_size_{}_trim_{}.h5".format(args.flavor,size,trim)
+        save_path = os.path.join(folder_path, save_name)
+
+    file_exists = exists(save_path)
+
+    if  world_rank==0:
+        print("Write path: {}".format(save_path))
+        if file_exists: print("File already exists")
     
     with h5py.File(save_path, 'a', driver='mpio', comm=MPI.COMM_WORLD) as hf:
-    
-        hf.attrs['format'] = "nyx-lyaf"
-        hf.attrs['chunk'] = size
-        hf.attrs['trim'] = trim
-        hf.attrs['flavor'] = args.flavor
-
-        dom = hf.create_group("domain")
-        dom.attrs['size'] = [80,80,80]
-        dom.attrs['shape'] = [full_dim,full_dim,full_dim]
-
-        uni = hf.create_group("universe")
-        uni.attrs['hubble'] = 0.675
-        uni.attrs['omega_b'] = 0.0487
-        uni.attrs['omega_l'] = 0.69
-        uni.attrs['omega_m'] = 0.31
-        uni.attrs['redshift'] = 2.9999991588912964
         
-        if args.native:
-            # rho = hf.create_dataset("native_fields/baryon_density", data=np.exp(14.*final[0,0,:,:,:]))
-            rho = hf.create_dataset("native_fields/baryon_density", (full_dim,full_dim,full_dim), dtype='<f4')
-            rho.attrs['units'] = "(mean)"
+        if not args.template and not file_exists:
+            hf.attrs['format'] = "nyx-lyaf"
+            hf.attrs['chunk'] = size
+            hf.attrs['trim'] = trim
+            hf.attrs['flavor'] = args.flavor
 
-            # vx = hf.create_dataset("native_fields/velocity_x", data=final[0,1,:,:,:]*9e7)
-            vx = hf.create_dataset("native_fields/velocity_x", (full_dim,full_dim,full_dim), dtype='<f4')
-            vx.attrs['units'] = "km/s"
+            dom = hf.create_group("domain")
+            dom.attrs['size'] = [80,80,80]
+            dom.attrs['shape'] = [full_dim,full_dim,full_dim]
 
-            # vy = hf.create_dataset("native_fields/velocity_y", data=final[0,2,:,:,:]*9e7)
-            vy = hf.create_dataset("native_fields/velocity_y", (full_dim,full_dim,full_dim), dtype='<f4')
-            vy.attrs['units'] = "km/s"
+            uni = hf.create_group("universe")
+            uni.attrs['hubble'] = 0.675
+            uni.attrs['omega_b'] = 0.0487
+            uni.attrs['omega_l'] = 0.69
+            uni.attrs['omega_m'] = 0.31
+            uni.attrs['redshift'] = 2.9999991588912964
 
-            # vz = hf.create_dataset("native_fields/velocity_z", data=final[0,3,:,:,:]*9e7)
-            vz = hf.create_dataset("native_fields/velocity_z", (full_dim,full_dim,full_dim), dtype='<f4')
-            vz.attrs['units'] = "km/s"
+            if args.native:
+                # rho = hf.create_dataset("native_fields/baryon_density", data=np.exp(14.*final[0,0,:,:,:]))
+                rho = hf.create_dataset("native_fields/baryon_density", (full_dim,full_dim,full_dim), dtype='<f4')
+                rho.attrs['units'] = "(mean)"
 
-            # temp = hf.create_dataset("native_fields/temperature", data=np.exp(8.*(final[0,4,:,:,:] + 1.5)))
-            temp = hf.create_dataset("native_fields/temperature", (full_dim,full_dim,full_dim), dtype='<f4')
-            temp.attrs['units'] = "K"
-        
+                # vx = hf.create_dataset("native_fields/velocity_x", data=final[0,1,:,:,:]*9e7)
+                vx = hf.create_dataset("native_fields/velocity_x", (full_dim,full_dim,full_dim), dtype='<f4')
+                vx.attrs['units'] = "km/s"
+
+                # vy = hf.create_dataset("native_fields/velocity_y", data=final[0,2,:,:,:]*9e7)
+                vy = hf.create_dataset("native_fields/velocity_y", (full_dim,full_dim,full_dim), dtype='<f4')
+                vy.attrs['units'] = "km/s"
+
+                # vz = hf.create_dataset("native_fields/velocity_z", data=final[0,3,:,:,:]*9e7)
+                vz = hf.create_dataset("native_fields/velocity_z", (full_dim,full_dim,full_dim), dtype='<f4')
+                vz.attrs['units'] = "km/s"
+
+                # temp = hf.create_dataset("native_fields/temperature", data=np.exp(8.*(final[0,4,:,:,:] + 1.5)))
+                temp = hf.create_dataset("native_fields/temperature", (full_dim,full_dim,full_dim), dtype='<f4')
+                temp.attrs['units'] = "K"
+
+            if args.derived:
+                tau = hf.create_dataset("derived_fields/tau_red", (full_dim,full_dim,full_dim), dtype='<f4')
+                tau.attrs['units'] = "(none)"
+                
         if args.derived:
-            tau = hf.create_dataset("derived_fields/tau_red", (full_dim,full_dim,full_dim), dtype='<f4')
-            tau.attrs['units'] = "(none)"
             flux = hf.create_dataset("derived_fields/flux_red", (full_dim,full_dim,full_dim), dtype='<f4')
             flux.attrs['units'] = "(none)"
 
@@ -215,17 +231,19 @@ if not args.dummy:
                                 with torch.no_grad():
                                     chunk = model(sliced_in)
 
-                                # un-normalize the NN output and write to file   
-                                #hf['native_fields']['baryon_density'][x1:x2,y1:y2,z1:z2] = np.exp(14.*chunk[0, 0, x1_edge:x_plus, y1_edge:y_plus, z1_edge:z_plus])
-                                #hf['native_fields']['velocity_x'][x1:x2,y1:y2,z1:z2] = chunk[0, 1, x1_edge:x_plus, y1_edge:y_plus, z1_edge:z_plus]*9e7
-                                #hf['native_fields']['velocity_y'][x1:x2,y1:y2,z1:z2] = chunk[0, 2, x1_edge:x_plus, y1_edge:y_plus, z1_edge:z_plus]*9e7
-                                #hf['native_fields']['velocity_z'][x1:x2,y1:y2,z1:z2] = chunk[0, 3, x1_edge:x_plus, y1_edge:y_plus, z1_edge:z_plus]*9e7
-                                #hf['native_fields']['temperature'][x1:x2,y1:y2,z1:z2] = np.exp(8.*(chunk[0, 4, x1_edge:x_plus, y1_edge:y_plus, z1_edge:z_plus] + 1.5))
+                                # un-normalize the NN output and write to file
+                                if args.native:
+                                    hf['native_fields']['baryon_density'][x1:x2,y1:y2,z1:z2] = np.exp(14.*chunk[0, 0, x1_edge:x_plus, y1_edge:y_plus, z1_edge:z_plus])
+                                    hf['native_fields']['velocity_x'][x1:x2,y1:y2,z1:z2] = chunk[0, 1, x1_edge:x_plus, y1_edge:y_plus, z1_edge:z_plus]*9e7
+                                    hf['native_fields']['velocity_y'][x1:x2,y1:y2,z1:z2] = chunk[0, 2, x1_edge:x_plus, y1_edge:y_plus, z1_edge:z_plus]*9e7
+                                    hf['native_fields']['velocity_z'][x1:x2,y1:y2,z1:z2] = chunk[0, 3, x1_edge:x_plus, y1_edge:y_plus, z1_edge:z_plus]*9e7
+                                    hf['native_fields']['temperature'][x1:x2,y1:y2,z1:z2] = np.exp(8.*(chunk[0, 4, x1_edge:x_plus, y1_edge:y_plus, z1_edge:z_plus] + 1.5))
+                                    
                                 if args.derived:
                                     trimmed = chunk[0, 0, x1_edge:x_plus, y1_edge:y_plus, z1_edge:z_plus]
                                     if args.flux:
                                         trimmed = np.minimum(trimmed, 1)
-                                        trimmed = np.maximum(trimmed, 1e-10)
+                                        trimmed = np.maximum(trimmed, 1e-100)
                                         hf['derived_fields']['tau_red'][x1:x2,y1:y2,z1:z2] = -np.log(trimmed)
                                         hf['derived_fields']['flux_red'][x1:x2,y1:y2,z1:z2] = trimmed
                                     else:

@@ -105,10 +105,11 @@ def train(params, args, local_rank, world_rank, world_size):
         lambda_chi = torch.zeros((1,5,1,1,1), dtype=torch.float32).to(device)
         lambda_chi[:,0,:,:,:] = params.lambda_chi
     else:
-        loss_func = UNet.loss_func
         lambda_chi = params.lambda_chi
         lambda_spec = params.lambda_spec
         trim = params.trim
+        loss_func = UNet.LossFunc(lambda_chi, lambda_spec, trim) 
+        
 
     # start training
     iters = 0
@@ -131,11 +132,11 @@ def train(params, args, local_rank, world_rank, world_size):
             inp, tar = map(lambda x: x.to(device), next(iter(train_data_loader)))
             #if world_rank==0: logging.info("Loaded Benchmark Data")
             
-            tr_loss, L1, chi_loss, spec_loss = loss_func(model(inp), tar, lambda_chi, lambda_spec, trim)
+            tr_loss, L1, chi_loss, spec_loss = loss_func(model(inp), tar, metric=False)
             #tr_loss = nn.functional.l1_loss(model(inp), tar)
             
             inp, tar = map(lambda x: x.to(device), next(iter(val_data_loader)))
-            val_loss, L1, chi_loss, spec_loss = loss_func(model(inp), tar, lambda_chi, lambda_spec, trim)
+            val_loss, L1, chi_loss, spec_loss = loss_func(model(inp), tar, metric=False)
             #val_loss = nn.functional.l1_loss(model(inp), tar)
             
             if params.distributed:
@@ -169,7 +170,7 @@ def train(params, args, local_rank, world_rank, world_size):
             optimizer.zero_grad()
             with autocast(params.enable_amp):
                 gen = model(inp)
-                loss, L1, chi_loss, spec_loss = loss_func(gen, tar, lambda_chi, lambda_spec, trim)
+                loss, L1, chi_loss, spec_loss = loss_func(gen, tar, metric=False)
                 #loss = nn.functional.l1_loss(gen, tar)
                 tr_loss.append(loss.item())
 
@@ -216,14 +217,15 @@ def train(params, args, local_rank, world_rank, world_size):
                         gen = model(inp)
                         gens.append(gen.detach().cpu().numpy())
                         tars.append(tar.detach().cpu().numpy())
-                        loss, L1, chi_loss, spec_loss = loss_func(gen, tar, lambda_chi, lambda_spec, trim)
+                        loss, L1, chi_loss, spec_loss = loss_func(gen, tar, metric=True)
                         #loss = nn.functional.l1_loss(gen, tar)
                         if params.distributed:
                             torch.distributed.all_reduce(loss)
+                            
                         val_loss.append(loss.item()/world_size)
                         val_L1.append(L1.item()/world_size)
-                        val_chi.append(chi_loss/world_size)
-                        val_spec.append(spec_loss/world_size)
+                        val_chi.append(chi_loss.item()/world_size)
+                        val_spec.append(spec_loss.item()/world_size)
             val_end = time.time()
             gens = np.concatenate(gens, axis=0)
             tars = np.concatenate(tars, axis=0)
@@ -238,7 +240,6 @@ def train(params, args, local_rank, world_rank, world_size):
                 # Plots
                 #fig, chi, L1score = meanL1(gens, tars)
                 
-                #net_loss, L1, chi_loss, spec_loss = loss_func(gens, tars, lambda_chi, lambda_spec, trim)
                 L1 = np.mean(np.abs(tars - gens)) 
                 
                 
